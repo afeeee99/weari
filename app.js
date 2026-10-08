@@ -85,6 +85,7 @@ function showScreen(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.go === name));
   window.scrollTo(0, 0);
   if (name === "wardrobe") renderWardrobe();
+  if (name === "style") renderStyleOccasions();
 }
 
 document.addEventListener("click", (e) => {
@@ -272,6 +273,82 @@ $("#add-form").addEventListener("submit", async (e) => {
   activeFilter = "all";
   showScreen("wardrobe");
   toast("Added to your wardrobe ✨");
+});
+
+// =====================================================
+// Style me screen
+// (the outfit-picking rules live in stylist.js)
+// =====================================================
+let styleOccasion = null;
+let lastOutfitIds = [];
+
+async function renderStyleOccasions() {
+  const items = await getAllItems();
+  const countFor = (o) => items.filter((it) => it.occasions.includes(o)).length;
+
+  $("#style-occasions").innerHTML = OCCASIONS.map((o) => {
+    const n = countFor(o);
+    return `<button type="button" class="chip ${o === styleOccasion ? "selected" : ""}" data-style-occasion="${o}">
+      ${o}${n ? ` <span class="chip-count">${n}</span>` : ""}</button>`;
+  }).join("");
+}
+
+$("#style-occasions").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-style-occasion]");
+  if (!btn) return;
+  styleOccasion = btn.dataset.styleOccasion;
+  lastOutfitIds = [];
+  document.querySelectorAll("[data-style-occasion]").forEach((b) => b.classList.toggle("selected", b === btn));
+  $("#suggest-btn").disabled = false;
+  $("#style-result").innerHTML = "";
+});
+
+async function showSuggestion() {
+  if (!styleOccasion) return;
+  const items = await getAllItems();
+  const result = await suggestOutfit(items, styleOccasion, lastOutfitIds);
+  const box = $("#style-result");
+
+  if (result.missing) {
+    box.innerHTML = `
+      <div class="notice">
+        <div class="notice-icon">🧺</div>
+        <p>${result.missing}</p>
+        <button class="btn-secondary" data-go="add">Add item</button>
+      </div>`;
+    return;
+  }
+
+  lastOutfitIds = result.outfit.map((p) => p.item.id);
+  box.innerHTML = `
+    <h3 class="outfit-title">Your ${styleOccasion} look</h3>
+    <div class="grid outfit-grid">
+      ${result.outfit
+        .map(
+          ({ role, item }) => `
+        <article class="card">
+          <img src="${item.photo}" alt="${item.color} ${item.category}" />
+          <div class="card-body">
+            <div class="role">${role}</div>
+            <div class="card-top">
+              <span class="dot" style="background:${colorHex(item.color)}"></span>
+              <span class="card-cat">${item.color} ${item.category}</span>
+            </div>
+          </div>
+        </article>`
+        )
+        .join("")}
+    </div>
+    ${result.repeated ? `<p class="hint-text">That’s the only combination for now. Add more ${styleOccasion} pieces for variety.</p>` : ""}
+    <button id="try-another" class="btn-secondary btn-block">↻ Try another</button>`;
+  box.classList.remove("fade-in");
+  void box.offsetWidth; // restart the fade animation
+  box.classList.add("fade-in");
+}
+
+$("#suggest-btn").addEventListener("click", showSuggestion);
+$("#style-result").addEventListener("click", (e) => {
+  if (e.target.closest("#try-another")) showSuggestion();
 });
 
 // ---------- Start ----------

@@ -73,6 +73,19 @@
         <button type="submit" class="btn-primary btn-block">Save to wardrobe</button>
       </form>
     </section>
+    <!-- ============ STYLE ME SCREEN ============ -->
+    <section id="screen-style" class="screen" hidden>
+      <h2 class="screen-title">Style me</h2>
+
+      <fieldset>
+        <legend>What’s the occasion?</legend>
+        <div class="chips" id="style-occasions"></div>
+      </fieldset>
+
+      <button id="suggest-btn" class="btn-primary btn-block" disabled>Suggest outfit</button>
+
+      <div id="style-result" class="style-result"></div>
+    </section>
   </main>
 
   <!-- ============ BOTTOM NAV ============ -->
@@ -85,10 +98,15 @@
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
       Add item
     </button>
+    <button class="tab" data-go="style">
+      <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>
+      Style me
+    </button>
   </nav>
 
   <div id="toast" class="toast" hidden></div>
 
+  <script src="stylist.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
