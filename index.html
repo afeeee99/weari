@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#faf8f5" />
+  <title>Weari</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="logo">weari</h1>
+    <span id="item-count" class="count"></span>
+  </header>
+
+  <main>
+    <!-- ============ WARDROBE SCREEN ============ -->
+    <section id="screen-wardrobe" class="screen">
+      <div class="filters" id="filters"></div>
+
+      <div id="empty-state" class="empty" hidden>
+        <div class="empty-icon">👗</div>
+        <h2>Your wardrobe is empty</h2>
+        <p>Add your first piece to get started.</p>
+        <button class="btn-primary" data-go="add">Add item</button>
+      </div>
+
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <!-- ============ ADD ITEM SCREEN ============ -->
+    <section id="screen-add" class="screen" hidden>
+      <h2 class="screen-title">Add item</h2>
+
+      <form id="add-form" novalidate>
+        <label class="photo-picker" id="photo-picker">
+          <input type="file" id="photo-input" accept="image/*" hidden />
+          <img id="photo-preview" alt="" hidden />
+          <div class="photo-placeholder" id="photo-placeholder">
+            <span class="plus">+</span>
+            <span>Upload a photo</span>
+          </div>
+        </label>
+
+        <fieldset>
+          <legend>Category</legend>
+          <div class="chips" id="category-chips"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Color</legend>
+          <div class="swatches" id="color-swatches"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Occasions <span class="hint">pick any</span></legend>
+          <div class="chips" id="occasion-chips"></div>
+        </fieldset>
+
+        <label class="toggle-row">
+          <span>
+            <strong>Available to swap</strong>
+            <small>Let others know this piece is up for trade</small>
+          </span>
+          <input type="checkbox" id="swap-input" />
+          <span class="switch"></span>
+        </label>
+
+        <p id="form-error" class="error" hidden></p>
+        <button type="submit" class="btn-primary btn-block">Save to wardrobe</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- ============ BOTTOM NAV ============ -->
+  <nav class="tabbar">
+    <button class="tab active" data-go="wardrobe">
+      <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+      Wardrobe
+    </button>
+    <button class="tab" data-go="add">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      Add item
+    </button>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
