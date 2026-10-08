@@ -86,7 +86,28 @@
 
       <div id="style-result" class="style-result"></div>
     </section>
+    <!-- ============ SWAP SCREEN ============ -->
+    <section id="screen-swap" class="screen" hidden>
+      <h2 class="screen-title">Rewear <span class="subtitle">Swap with the community</span></h2>
+
+      <div class="segmented" id="swap-tabs">
+        <button class="seg active" data-swap-tab="feed">Feed</button>
+        <button class="seg" data-swap-tab="listings">My listings</button>
+        <button class="seg" data-swap-tab="requests">My requests</button>
+      </div>
+
+      <div id="swap-feed" class="grid"></div>
+      <div id="swap-listings" hidden></div>
+      <div id="swap-requests" hidden></div>
+    </section>
   </main>
+
+  <!-- ============ OFFER SHEET (pops up from the bottom) ============ -->
+  <div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="sheet" class="sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div id="sheet-content"></div>
+  </div>
 
   <!-- ============ BOTTOM NAV ============ -->
   <nav class="tabbar">
@@ -102,11 +123,16 @@
       <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>
       Style me
     </button>
+    <button class="tab" data-go="swap">
+      <svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>
+      Swap
+    </button>
   </nav>
 
   <div id="toast" class="toast" hidden></div>
 
   <script src="stylist.js"></script>
+  <script src="swap-data.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

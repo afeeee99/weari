@@ -86,11 +86,14 @@ function showScreen(name) {
   window.scrollTo(0, 0);
   if (name === "wardrobe") renderWardrobe();
   if (name === "style") renderStyleOccasions();
+  if (name === "swap") renderSwap();
 }
 
 document.addEventListener("click", (e) => {
   const go = e.target.closest("[data-go]");
-  if (go) showScreen(go.dataset.go);
+  if (!go) return;
+  closeSheet();
+  showScreen(go.dataset.go);
 });
 
 function toast(msg) {
@@ -349,6 +352,246 @@ async function showSuggestion() {
 $("#suggest-btn").addEventListener("click", showSuggestion);
 $("#style-result").addEventListener("click", (e) => {
   if (e.target.closest("#try-another")) showSuggestion();
+});
+
+// =====================================================
+// Swap screen (Rewear)
+// (sample listings live in swap-data.js)
+// =====================================================
+const REQUESTS_KEY = "weari-swap-requests";
+let swapTab = "feed";
+
+// Swap requests are small, so they're kept in localStorage
+function getRequests() {
+  try {
+    return JSON.parse(localStorage.getItem(REQUESTS_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+function saveRequests(list) {
+  try {
+    localStorage.setItem(REQUESTS_KEY, JSON.stringify(list));
+  } catch {
+    toast("Couldn't save — browser storage is full or blocked");
+  }
+}
+
+const describe = (it) => `${it.color} ${it.category}`;
+const tagsHtml = (occasions) => `<div class="tags">${occasions.map((o) => `<span class="tag">${o}</span>`).join("")}</div>`;
+const myItemCard = (it) => `
+  <article class="card">
+    <img src="${it.photo}" alt="${describe(it)}" loading="lazy" />
+    <div class="card-body">
+      <div class="card-top">
+        <span class="dot" style="background:${colorHex(it.color)}"></span>
+        <span class="card-cat">${describe(it)}</span>
+      </div>
+      ${tagsHtml(it.occasions)}
+    </div>
+  </article>`;
+
+document.querySelector("#swap-tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-swap-tab]");
+  if (!btn) return;
+  swapTab = btn.dataset.swapTab;
+  renderSwap();
+});
+
+async function renderSwap() {
+  const [listings, items] = await Promise.all([getSwapListings(), getAllItems()]);
+  const requests = getRequests();
+  const mine = items.filter((it) => it.swappable);
+
+  // Tabs (with counts)
+  const counts = { listings: mine.length, requests: requests.length };
+  document.querySelectorAll("[data-swap-tab]").forEach((b) => {
+    const tab = b.dataset.swapTab;
+    b.classList.toggle("active", tab === swapTab);
+    const label = { feed: "Feed", listings: "My listings", requests: "My requests" }[tab];
+    b.innerHTML = counts[tab] ? `${label} <span class="seg-count">${counts[tab]}</span>` : label;
+  });
+  $("#swap-feed").hidden = swapTab !== "feed";
+  $("#swap-listings").hidden = swapTab !== "listings";
+  $("#swap-requests").hidden = swapTab !== "requests";
+
+  // --- Feed ---
+  const requested = new Set(requests.map((r) => r.listingId));
+  $("#swap-feed").innerHTML = listings
+    .map(
+      (l) => `
+      <article class="card">
+        <img src="${l.photo}" alt="${l.title}" loading="lazy" />
+        <span class="member-badge"><span class="avatar">${l.member[0]}</span>${l.member}</span>
+        <div class="card-body">
+          <div class="listing-title">${l.title}</div>
+          <div class="card-top">
+            <span class="dot" style="background:${colorHex(l.color)}"></span>
+            <span class="card-meta">${describe(l)}</span>
+          </div>
+          ${tagsHtml(l.occasions)}
+          ${
+            requested.has(l.id)
+              ? `<button class="btn-small done" disabled>✓ Requested</button>`
+              : `<button class="btn-small" data-interested="${l.id}">I’m interested</button>`
+          }
+        </div>
+      </article>`
+    )
+    .join("");
+
+  // --- My listings ---
+  $("#swap-listings").innerHTML = mine.length
+    ? `<div class="grid">${mine.map(myItemCard).join("")}</div>`
+    : `<div class="notice">
+        <div class="notice-icon">🔁</div>
+        <p>You haven’t listed anything yet.<br />When adding an item, switch on <strong>Available to swap</strong>.</p>
+        <button class="btn-secondary" data-go="add">Add item</button>
+      </div>`;
+
+  // --- My requests ---
+  const byId = Object.fromEntries(items.map((it) => [it.id, it]));
+  const listingById = Object.fromEntries(listings.map((l) => [l.id, l]));
+  $("#swap-requests").innerHTML = requests.length
+    ? requests
+        .slice()
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((r) => {
+          const theirs = listingById[r.listingId] || r.listing;
+          const offered = byId[r.offeredItemId];
+          return `
+          <div class="request">
+            <div class="request-pics">
+              ${offered ? `<img src="${offered.photo}" alt="" />` : `<div class="pic-gone"></div>`}
+              <span class="swap-arrow">⇄</span>
+              ${theirs.photo ? `<img src="${theirs.photo}" alt="" />` : `<div class="pic-gone"></div>`}
+            </div>
+            <div class="request-info">
+              <div class="request-text">Your <strong>${offered ? describe(offered) : "removed item"}</strong>
+                for ${theirs.member}’s <strong>${theirs.title}</strong></div>
+              <div class="request-meta">
+                <span class="status">Pending</span>
+                <span>${new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                <button class="link-btn" data-cancel-request="${r.id}">Cancel</button>
+              </div>
+            </div>
+          </div>`;
+        })
+        .join("")
+    : `<div class="notice">
+        <div class="notice-icon">💌</div>
+        <p>No swap requests yet.<br />Tap <strong>I’m interested</strong> on something in the feed.</p>
+        <button class="btn-secondary" data-swap-goto="feed">Browse the feed</button>
+      </div>`;
+}
+
+document.querySelector("#screen-swap").addEventListener("click", (e) => {
+  const goto = e.target.closest("[data-swap-goto]");
+  if (goto) {
+    swapTab = goto.dataset.swapGoto;
+    renderSwap();
+  }
+  const interested = e.target.closest("[data-interested]");
+  if (interested) openOfferSheet(interested.dataset.interested);
+
+  const cancel = e.target.closest("[data-cancel-request]");
+  if (cancel) {
+    saveRequests(getRequests().filter((r) => r.id !== cancel.dataset.cancelRequest));
+    renderSwap();
+    toast("Request cancelled");
+  }
+});
+
+// ---------- The "offer an item" pop-up ----------
+function openSheet(html) {
+  $("#sheet-content").innerHTML = html;
+  $("#sheet").hidden = false;
+  $("#sheet-backdrop").hidden = false;
+  document.body.classList.add("no-scroll");
+}
+function closeSheet() {
+  $("#sheet").hidden = true;
+  $("#sheet-backdrop").hidden = true;
+  document.body.classList.remove("no-scroll");
+}
+$("#sheet-backdrop").addEventListener("click", closeSheet);
+
+let offerFor = null; // the listing being requested
+let offerChoice = null; // id of my item being offered
+
+async function openOfferSheet(listingId) {
+  const [listings, items] = await Promise.all([getSwapListings(), getAllItems()]);
+  offerFor = listings.find((l) => l.id === listingId);
+  offerChoice = null;
+  const mine = items.filter((it) => it.swappable);
+
+  const header = `
+    <div class="sheet-header">
+      <img src="${offerFor.photo}" alt="" />
+      <div>
+        <h3>Offer a swap</h3>
+        <p>for ${offerFor.member}’s ${offerFor.title}</p>
+      </div>
+    </div>`;
+
+  if (!mine.length) {
+    openSheet(`${header}
+      <div class="notice flat">
+        <p>You don’t have any items available to swap yet.<br />Add one and switch on <strong>Available to swap</strong>.</p>
+        <button class="btn-primary" data-go="add">Add item</button>
+      </div>`);
+    return;
+  }
+
+  openSheet(`${header}
+    <p class="sheet-label">Pick one of your items to offer</p>
+    <div class="offer-grid">
+      ${mine
+        .map(
+          (it) => `
+        <button class="offer-option" data-offer="${it.id}">
+          <img src="${it.photo}" alt="${describe(it)}" />
+          <span>${describe(it)}</span>
+        </button>`
+        )
+        .join("")}
+    </div>
+    <button id="send-request" class="btn-primary btn-block" disabled>Send swap request</button>
+    <button class="link-btn sheet-cancel" data-close-sheet>Cancel</button>`);
+}
+
+$("#sheet").addEventListener("click", (e) => {
+  if (e.target.closest("[data-close-sheet]")) return closeSheet();
+
+  const option = e.target.closest("[data-offer]");
+  if (option) {
+    offerChoice = option.dataset.offer;
+    document.querySelectorAll("[data-offer]").forEach((b) => b.classList.toggle("selected", b === option));
+    $("#send-request").disabled = false;
+  }
+
+  if (e.target.closest("#send-request") && offerChoice) {
+    const { photo, ...listing } = offerFor; // keep a small copy of the listing
+    saveRequests([
+      ...getRequests(),
+      {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        listingId: offerFor.id,
+        listing,
+        offeredItemId: offerChoice,
+        status: "pending",
+        createdAt: Date.now(),
+      },
+    ]);
+    openSheet(`
+      <div class="success">
+        <div class="success-icon">🎉</div>
+        <h3>Swap request sent!</h3>
+        <p>Your offer for ${offerFor.member}’s ${offerFor.title} is saved in <strong>My requests</strong>.</p>
+        <button class="btn-primary btn-block" data-close-sheet>Done</button>
+      </div>`);
+    renderSwap();
+  }
 });
 
 // ---------- Start ----------
