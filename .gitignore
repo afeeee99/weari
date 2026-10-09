@@ -1,1 +1,8 @@
 .DS_Store
+
+# Secrets: never upload these
+.env
+.env.*
+*.pem
+*.key
+service-account*.json
