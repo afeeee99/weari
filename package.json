@@ -1,0 +1,16 @@
+{
+  "name": "weari",
+  "version": "1.0.0",
+  "description": "Weari - A simple, mobile-friendly wardrobe and rewear swapping app",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "node -e \"process.exit(0)\"",
+    "lint": "node -e \"process.exit(0)\""
+  },
+  "dependencies": {
+    "@google/genai": "^2.28.0",
+    "express": "^4.21.2"
+  }
+}

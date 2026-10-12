@@ -5,21 +5,120 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#faf8f5" />
   <title>Weari</title>
+  <meta name="description" content="A simple, mobile-friendly wardrobe and community rewear swap application." />
+  <meta property="og:title" content="Weari" />
+  <meta property="og:description" content="A simple, mobile-friendly wardrobe and community rewear swap application." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <h1 class="logo">weari</h1>
-    <span id="item-count" class="count"></span>
-  </header>
+  <div class="app-container">
+    <header class="topbar">
+      <h1 class="logo">weari</h1>
+      <div class="topbar-right">
+        <button id="karma-chip" class="karma-chip" data-go="karma" type="button" title="View Wardrobe Karma">
+          <span class="karma-chip-icon">✨</span>
+          <span id="karma-chip-points">0</span>
+          <span class="karma-chip-label">Karma</span>
+        </button>
+      </div>
+    </header>
 
   <main>
     <!-- ============ WARDROBE SCREEN ============ -->
     <section id="screen-wardrobe" class="screen">
       <div class="filters" id="filters"></div>
+
+      <!-- Quick-Add banner shown after saving an item with Scan another button -->
+      <div id="quick-add-banner" class="quick-add-banner" hidden>
+        <div class="quick-add-info">
+          <span class="quick-add-icon">📸</span>
+          <div>
+            <strong>Item saved to wardrobe!</strong>
+            <small>Keep adding pieces to build your digital closet</small>
+          </div>
+        </div>
+        <button type="button" id="btn-scan-another" class="btn-scan-action">📸 Scan another</button>
+      </div>
+
+      <!-- Complete your profile card (optional questions) -->
+      <div id="profile-card" class="profile-card" hidden>
+        <div class="profile-card-header">
+          <div class="profile-card-title-group">
+            <span class="profile-card-icon">🌿</span>
+            <div>
+              <h3 class="profile-card-title">Complete your profile</h3>
+              <p class="profile-card-sub">Share a few optional preferences to personalize your wardrobe. Earn 25 Karma points.</p>
+            </div>
+          </div>
+          <button type="button" id="btn-profile-dismiss" class="profile-card-close" aria-label="Dismiss">✕</button>
+        </div>
+
+        <div class="profile-card-body" id="profile-card-body">
+          <div class="profile-field">
+            <label class="profile-field-label">Age range</label>
+            <div class="profile-pill-group" id="profile-pills-age">
+              <button type="button" class="profile-pill" data-val="Under 20">Under 20</button>
+              <button type="button" class="profile-pill" data-val="20–29">20–29</button>
+              <button type="button" class="profile-pill" data-val="30–39">30–39</button>
+              <button type="button" class="profile-pill" data-val="40–49">40–49</button>
+              <button type="button" class="profile-pill" data-val="50+">50+</button>
+            </div>
+          </div>
+
+          <div class="profile-field">
+            <label class="profile-field-label">Closet state</label>
+            <div class="profile-pill-group" id="profile-pills-closet">
+              <button type="button" class="profile-pill" data-val="Overflowing">Overflowing</button>
+              <button type="button" class="profile-pill" data-val="Curated">Curated</button>
+              <button type="button" class="profile-pill" data-val="Chaotic">Chaotic</button>
+              <button type="button" class="profile-pill" data-val="Barely started">Barely started</button>
+            </div>
+          </div>
+
+          <div class="profile-field">
+            <label class="profile-field-label">How important sustainability is</label>
+            <div class="profile-pill-group" id="profile-pills-sustainability">
+              <button type="button" class="profile-pill" data-val="Essential">Essential</button>
+              <button type="button" class="profile-pill" data-val="Important">Important</button>
+              <button type="button" class="profile-pill" data-val="Nice to have">Nice to have</button>
+              <button type="button" class="profile-pill" data-val="Not a priority">Not a priority</button>
+            </div>
+          </div>
+
+          <div class="profile-field">
+            <label class="profile-field-label">How many pieces you own</label>
+            <div class="profile-pill-group" id="profile-pills-pieces">
+              <button type="button" class="profile-pill" data-val="Under 30">Under 30</button>
+              <button type="button" class="profile-pill" data-val="30–70">30–70</button>
+              <button type="button" class="profile-pill" data-val="71–150">71–150</button>
+              <button type="button" class="profile-pill" data-val="150+">150+</button>
+            </div>
+          </div>
+
+          <div class="profile-field">
+            <label class="profile-field-label">Monthly clothing budget</label>
+            <div class="profile-pill-group" id="profile-pills-budget">
+              <button type="button" class="profile-pill" data-val="Under $50">Under $50</button>
+              <button type="button" class="profile-pill" data-val="$50–$150">$50–$150</button>
+              <button type="button" class="profile-pill" data-val="$150–$300">$150–$300</button>
+              <button type="button" class="profile-pill" data-val="$300+">$300+</button>
+            </div>
+          </div>
+
+          <div class="profile-card-actions">
+            <button type="button" id="btn-save-profile" class="btn-primary">Save profile</button>
+            <button type="button" id="btn-skip-profile" class="btn-link-action">Skip for now</button>
+          </div>
+        </div>
+
+        <div class="profile-card-completed" id="profile-card-completed" hidden>
+          <span class="profile-comp-badge">✓ Profile completed (+25 Karma)</span>
+          <button type="button" id="btn-edit-profile" class="btn-link-action">Edit details</button>
+        </div>
+      </div>
 
       <div id="empty-state" class="empty" hidden>
         <div class="empty-icon">👗</div>
@@ -29,6 +128,14 @@
       </div>
 
       <div id="grid" class="grid"></div>
+
+      <!-- Floating round + button that opens the Add item screen -->
+      <button type="button" id="fab-add-item" class="fab-add" data-go="add" title="Add item" aria-label="Add item">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </button>
     </section>
 
     <!-- ============ ADD ITEM SCREEN ============ -->
@@ -36,14 +143,43 @@
       <h2 class="screen-title">Add item</h2>
 
       <form id="add-form" novalidate>
-        <label class="photo-picker" id="photo-picker">
-          <input type="file" id="photo-input" accept="image/*" hidden />
-          <img id="photo-preview" alt="" hidden />
-          <div class="photo-placeholder" id="photo-placeholder">
-            <span class="plus">+</span>
-            <span>Upload a photo</span>
+        <div class="photo-controls-bar">
+          <button type="button" id="btn-camera-scan" class="btn-camera-trigger">
+            📸 Scan with camera
+          </button>
+        </div>
+
+        <div class="photo-row" id="photo-row">
+          <label class="photo-picker" id="photo-picker">
+            <input type="file" id="photo-input" accept="image/*" hidden />
+            <img id="photo-preview" alt="" hidden />
+            <div class="photo-placeholder" id="photo-placeholder">
+              <span class="plus">+</span>
+              <span>Upload photo or tap camera above</span>
+            </div>
+          </label>
+
+          <div class="photo-aside" id="photo-aside" hidden>
+            <button type="button" id="btn-autotag" class="btn-autotag">
+              <span class="sparkle-icon">✨</span> Auto-tag with Gemini
+            </button>
+            <button type="button" id="btn-rescan" class="btn-link-action">📸 Retake photo</button>
+            <div id="autotag-status" class="autotag-status" hidden>
+              <span class="sparkle-icon">✨</span>
+              <span>Gemini is looking...</span>
+            </div>
+            <div id="gemini-tag-badge" class="gemini-tag-badge" hidden>
+              <span class="sparkle-icon">✨</span>
+              <span class="tag-badge-text">Tagged by Gemini</span>
+            </div>
+            <div id="autotag-hint" class="autotag-hint" hidden></div>
           </div>
-        </label>
+        </div>
+
+        <div class="field-group" id="name-field-group">
+          <label for="item-name-input" class="field-label">Item name <span class="hint">(optional)</span></label>
+          <input type="text" id="item-name-input" class="text-input" placeholder="e.g. White linen shirt" maxlength="60" />
+        </div>
 
         <fieldset>
           <legend>Category</legend>
@@ -75,16 +211,129 @@
     </section>
     <!-- ============ STYLE ME SCREEN ============ -->
     <section id="screen-style" class="screen" hidden>
-      <h2 class="screen-title">Style me</h2>
+      <div class="style-header-row">
+        <h2 class="screen-title">Style me</h2>
+      </div>
 
-      <fieldset>
-        <legend>What’s the occasion?</legend>
-        <div class="chips" id="style-occasions"></div>
-      </fieldset>
+      <!-- Two Clear Styling Mode Tabs -->
+      <div class="segmented style-modes-tabs" id="style-mode-tabs">
+        <button type="button" class="seg active" data-style-mode="ai">✨ AI Stylist</button>
+        <button type="button" class="seg" data-style-mode="manual">🎨 Create your own</button>
+      </div>
 
-      <button id="suggest-btn" class="btn-primary btn-block" disabled>Suggest outfit</button>
+      <!-- MODE 1: AI STYLIST (Current Gemini flow) -->
+      <div id="style-mode-ai">
+        <fieldset>
+          <legend>What’s the occasion?</legend>
+          <div class="chips" id="style-occasions"></div>
+        </fieldset>
 
-      <div id="style-result" class="style-result"></div>
+        <button id="suggest-btn" class="btn-primary btn-block" disabled>Suggest outfit</button>
+
+        <div id="style-result" class="style-result"></div>
+      </div>
+
+      <!-- MODE 2: CREATE YOUR OWN (Manual wardrobe outfit builder) -->
+      <div id="style-mode-manual" hidden>
+        <div class="manual-intro">
+          <p class="manual-subtitle">Pick pieces from your wardrobe into slots, see them arranged as one outfit, and wear or save it.</p>
+        </div>
+
+        <div class="field-group">
+          <label for="manual-outfit-name" class="field-label">Outfit name</label>
+          <input type="text" id="manual-outfit-name" class="text-input" placeholder="e.g. Saturday Coffee Run, Summer Wedding" maxlength="60" />
+        </div>
+
+        <!-- Arranged Outfit Slots Canvas -->
+        <div class="outfit-canvas">
+          <div class="canvas-header">
+            <span class="canvas-title">Arranged outfit</span>
+            <button type="button" id="btn-clear-slots" class="btn-link-action">Clear slots</button>
+          </div>
+
+          <div class="slots-grid">
+            <!-- Top Slot -->
+            <div class="outfit-slot" data-slot-type="top">
+              <div class="slot-tag">👕 Top</div>
+              <div class="slot-body" id="slot-body-top">
+                <button type="button" class="slot-pick-btn" data-slot-target="top">
+                  <span class="slot-plus">+</span>
+                  <span class="slot-text">Pick top</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Bottom or Dress Slot -->
+            <div class="outfit-slot" data-slot-type="bottom-or-dress">
+              <div class="slot-tag">👗 Bottom or Dress</div>
+              <div class="slot-body" id="slot-body-bottom-or-dress">
+                <button type="button" class="slot-pick-btn" data-slot-target="bottom-or-dress">
+                  <span class="slot-plus">+</span>
+                  <span class="slot-text">Pick bottom or dress</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Shoes Slot -->
+            <div class="outfit-slot" data-slot-type="shoes">
+              <div class="slot-tag">👟 Shoes</div>
+              <div class="slot-body" id="slot-body-shoes">
+                <button type="button" class="slot-pick-btn" data-slot-target="shoes">
+                  <span class="slot-plus">+</span>
+                  <span class="slot-text">Pick shoes</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Outerwear Slot -->
+            <div class="outfit-slot" data-slot-type="outerwear">
+              <div class="slot-tag">🧥 Outerwear</div>
+              <div class="slot-body" id="slot-body-outerwear">
+                <button type="button" class="slot-pick-btn" data-slot-target="outerwear">
+                  <span class="slot-plus">+</span>
+                  <span class="slot-text">Pick outerwear</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Accessory Slot -->
+            <div class="outfit-slot" data-slot-type="accessory">
+              <div class="slot-tag">👜 Accessory</div>
+              <div class="slot-body" id="slot-body-accessory">
+                <button type="button" class="slot-pick-btn" data-slot-target="accessory">
+                  <span class="slot-plus">+</span>
+                  <span class="slot-text">Pick accessory</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Manual Actions: I wore this & Save, plus Optional Gemini review -->
+        <div class="manual-actions-panel">
+          <div class="manual-btn-row">
+            <button type="button" id="btn-manual-wore" class="btn-primary" style="flex:1;">
+              ✓ I wore this
+            </button>
+            <button type="button" id="btn-manual-save" class="btn-secondary" style="flex:1;">
+              💾 Save
+            </button>
+          </div>
+
+          <button type="button" id="btn-manual-review" class="btn-review-look">
+            <span class="sparkle-icon">✨</span> Ask Gemini to review my look
+          </button>
+        </div>
+
+        <!-- Optional 2-Sentence Review Output -->
+        <div id="manual-review-box" class="manual-review-box" hidden></div>
+
+        <!-- Saved Outfits Gallery -->
+        <div class="saved-outfits-section" id="saved-outfits-section">
+          <h3 class="section-title">Saved outfits</h3>
+          <div id="saved-outfits-list" class="saved-outfits-list"></div>
+        </div>
+      </div>
     </section>
     <!-- ============ SWAP SCREEN ============ -->
     <section id="screen-swap" class="screen" hidden>
@@ -100,6 +349,180 @@
       <div id="swap-listings" hidden></div>
       <div id="swap-requests" hidden></div>
     </section>
+
+    <!-- ============ INSIGHTS SCREEN ============ -->
+    <section id="screen-insights" class="screen" hidden>
+      <h2 class="screen-title">Insights <span class="subtitle">Wardrobe usage & circular impact</span></h2>
+
+      <!-- Swap nudge banner -->
+      <div id="insights-nudge" class="insights-nudge"></div>
+
+      <!-- Impact card -->
+      <div class="impact-card">
+        <div class="impact-header">
+          <span class="impact-icon">🌱</span>
+          <div>
+            <h3 class="impact-title">Circular impact</h3>
+            <p class="impact-sub" id="impact-counts"></p>
+          </div>
+        </div>
+        <div class="impact-highlight" id="impact-headline"></div>
+        <div class="impact-caption" id="impact-detail"></div>
+      </div>
+
+      <!-- Wardrobe usage (30 days) -->
+      <div class="usage-card">
+        <div class="card-heading-group">
+          <h3 class="section-heading">Wardrobe usage</h3>
+          <p class="section-sub">Items worn in the last 30 days</p>
+        </div>
+        <div class="usage-visual">
+          <div class="ring-container">
+            <svg class="progress-ring" viewBox="0 0 100 100">
+              <circle class="ring-bg" cx="50" cy="50" r="42" />
+              <circle id="usage-ring-progress" class="ring-progress" cx="50" cy="50" r="42" />
+            </svg>
+            <div class="ring-label">
+              <span id="usage-percent" class="ring-percent">0%</span>
+              <span class="ring-sub">in rotation</span>
+            </div>
+          </div>
+          <div class="usage-meta">
+            <div id="usage-fraction" class="usage-stat">0 of 0 pieces</div>
+            <div class="usage-bar-track">
+              <div id="usage-bar-fill" class="usage-bar-fill" style="width: 0%;"></div>
+            </div>
+            <div id="usage-desc" class="usage-desc">Wear more of what you own to maximize your wardrobe rotation.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Most worn -->
+      <div class="insights-section">
+        <div class="card-heading-group">
+          <h3 class="section-heading">Most worn</h3>
+          <p class="section-sub">Your top 3 go-to pieces</p>
+        </div>
+        <div id="most-worn-list" class="grid insights-grid"></div>
+      </div>
+
+      <!-- Never worn / Inactive -->
+      <div class="insights-section">
+        <div class="card-heading-group">
+          <h3 class="section-heading">Never worn or inactive</h3>
+          <p class="section-sub">Pieces not worn in 30 days or yet to be worn</p>
+        </div>
+        <div id="never-worn-list" class="grid insights-grid"></div>
+      </div>
+    </section>
+
+    <!-- ============ KARMA SCREEN ============ -->
+    <section id="screen-karma" class="screen" hidden>
+      <h2 class="screen-title">Wardrobe Karma <span class="subtitle">Eco-points & conscious styling</span></h2>
+
+      <!-- Total Points Hero Card -->
+      <div class="karma-hero-card">
+        <div class="karma-hero-top">
+          <span class="karma-sparkle">✨</span>
+          <div>
+            <div class="karma-hero-points" id="karma-total-points">0</div>
+            <div class="karma-hero-label">Karma Points</div>
+          </div>
+        </div>
+        <p class="karma-hero-sub">Earned by rewearing, keeping clothes in circulation, and swapping.</p>
+      </div>
+
+      <!-- Current Level Card -->
+      <div class="karma-level-card">
+        <div class="card-heading-group">
+          <div class="level-badge-row">
+            <span class="level-icon" id="level-icon">🌱</span>
+            <div>
+              <div class="level-status-tag">Current Level</div>
+              <h3 class="level-name" id="level-name">Closet Curious</h3>
+            </div>
+          </div>
+        </div>
+        <div class="level-progress-wrap">
+          <div class="level-bar-track">
+            <div id="level-bar-fill" class="level-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div class="level-progress-labels">
+            <span id="level-progress-text">0 / 50 pts to Thrift Thinker</span>
+            <span id="level-progress-pct">0%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Streak Counter Card -->
+      <div class="streak-card">
+        <div class="streak-icon">🔥</div>
+        <div class="streak-info">
+          <div class="streak-count"><span id="streak-days">1</span> Day Streak</div>
+          <div class="streak-caption">Days in a row you’ve opened Weari or worn your wardrobe</div>
+        </div>
+      </div>
+
+      <!-- Badges Grid -->
+      <div class="karma-section">
+        <div class="card-heading-group">
+          <h3 class="section-heading">Badges & Milestones</h3>
+          <p class="section-sub">Collect badges through conscious wardrobe habits</p>
+        </div>
+        <div id="badges-grid" class="badges-grid"></div>
+      </div>
+
+      <!-- How to Earn Karma Reference -->
+      <div class="karma-rules-card">
+        <h3 class="section-heading">How to earn Karma</h3>
+        <ul class="karma-rules-list">
+          <li><span>Add a new item to wardrobe</span><strong>+10 pts</strong></li>
+          <li><span>Mark an item available to swap</span><strong>+15 pts</strong></li>
+          <li><span>Send a swap request on Rewear</span><strong>+20 pts</strong></li>
+          <li><span>Wear an item untouched for 30+ days</span><strong>+25 pts</strong></li>
+          <li><span>Re-wear an outfit instead of shopping</span><strong>+10 pts</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ PROFILE SCREEN ============ -->
+    <section id="screen-profile" class="screen" hidden>
+      <h2 class="screen-title">Profile</h2>
+      <div class="profile-placeholder-box">
+        <div class="profile-placeholder-avatar">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
+        <h3 class="profile-placeholder-heading">Your Profile</h3>
+        <p class="profile-placeholder-text">Manage your wardrobe settings and mindful style preferences.</p>
+
+        <div class="profile-nav-list">
+          <button type="button" class="profile-nav-row" id="btn-profile-settings">
+            <div class="profile-nav-row-main">
+              <span class="profile-nav-icon">⚙️</span>
+              <div class="profile-nav-labels">
+                <strong>Settings & Preferences</strong>
+                <small>Style goals, occasions & replay onboarding</small>
+              </div>
+            </div>
+            <span class="profile-nav-chevron">›</span>
+          </button>
+
+          <button type="button" class="profile-nav-row" data-go="karma">
+            <div class="profile-nav-row-main">
+              <span class="profile-nav-icon">✨</span>
+              <div class="profile-nav-labels">
+                <strong>Wardrobe Karma</strong>
+                <small>Levels, conscious badges & streak</small>
+              </div>
+            </div>
+            <span class="profile-nav-chevron">›</span>
+          </button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- ============ OFFER SHEET (pops up from the bottom) ============ -->
@@ -109,15 +532,11 @@
     <div id="sheet-content"></div>
   </div>
 
-  <!-- ============ BOTTOM NAV ============ -->
+  <!-- ============ BOTTOM NAV (5 tabs) ============ -->
   <nav class="tabbar">
     <button class="tab active" data-go="wardrobe">
       <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
       Wardrobe
-    </button>
-    <button class="tab" data-go="add">
-      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-      Add item
     </button>
     <button class="tab" data-go="style">
       <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>
@@ -127,9 +546,275 @@
       <svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>
       Swap
     </button>
+    <button class="tab" data-go="insights">
+      <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+      Insights
+    </button>
+    <button class="tab" data-go="profile">
+      <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Profile
+    </button>
   </nav>
+  </div> <!-- .app-container -->
+
+  <!-- Floating Karma Points Animation Popup -->
+  <div id="karma-popup" class="karma-popup" hidden></div>
+
+  <!-- Celebration Modal for Levels and Badges -->
+  <div id="celebration-modal" class="celebration-modal" hidden>
+    <div class="celebration-backdrop" id="celebration-backdrop"></div>
+    <div class="celebration-card">
+      <div class="celebration-icon" id="celebration-icon">🎉</div>
+      <div class="celebration-tag" id="celebration-tag">Level Up!</div>
+      <h3 class="celebration-title" id="celebration-title">Thrift Thinker</h3>
+      <p class="celebration-desc" id="celebration-desc">You've unlocked this conscious milestone!</p>
+      <button class="btn-primary btn-block" id="celebration-close">Awesome!</button>
+    </div>
+  </div>
 
   <div id="toast" class="toast" hidden></div>
+
+  <!-- Full-Screen Live In-App Camera Scanner -->
+  <div id="camera-modal" class="camera-fullscreen-view" hidden>
+    <video id="camera-video" playsinline autoplay muted></video>
+    <canvas id="camera-canvas" hidden></canvas>
+    <img id="camera-frozen-img" alt="Captured garment" hidden />
+
+    <div class="camera-top-bar">
+      <button type="button" id="camera-close" class="camera-icon-btn" aria-label="Close camera">✕</button>
+      <button type="button" id="camera-flip" class="camera-icon-btn" title="Flip camera" hidden>🔄</button>
+    </div>
+
+    <div class="camera-guide-container" id="camera-guide">
+      <div class="camera-guide-box"></div>
+      <p class="camera-guide-text">Place one item in the frame</p>
+    </div>
+
+    <div class="camera-bottom-bar">
+      <!-- Live capture mode controls -->
+      <div id="camera-capture-controls" class="camera-capture-controls">
+        <label class="camera-file-fallback-btn" title="Upload from files instead">
+          <input type="file" id="camera-fallback-file" accept="image/*" hidden />
+          📁
+        </label>
+        <button type="button" id="camera-snap" class="camera-snap-button" aria-label="Capture photo">
+          <span class="camera-snap-inner"></span>
+        </button>
+        <div style="width:44px; height:44px;"></div>
+      </div>
+
+      <!-- Frozen review mode controls -->
+      <div id="camera-review-controls" class="camera-review-controls" hidden>
+        <button type="button" id="camera-retake" class="btn-camera-retake">
+          ↺ Retake
+        </button>
+        <button type="button" id="camera-use-photo" class="btn-camera-use">
+          ✓ Use photo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wardrobe Slot Item Picker Modal -->
+  <div id="slot-picker-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="slot-picker-sheet" class="sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <h3 id="slot-picker-title">Pick a piece</h3>
+        <p id="slot-picker-sub">Choose an item from your wardrobe</p>
+      </div>
+      <button type="button" class="btn-close" id="slot-picker-close">✕</button>
+    </div>
+
+    <div id="slot-picker-grid" class="slot-picker-grid"></div>
+
+    <button type="button" class="btn-secondary btn-block sheet-cancel" id="slot-picker-cancel">Cancel</button>
+  </div>
+
+  <!-- Settings Sheet Modal -->
+  <div id="settings-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="settings-modal" class="sheet settings-sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <h3>Settings</h3>
+        <p>Preferences and wardrobe controls</p>
+      </div>
+      <button type="button" class="btn-close" id="settings-close">✕</button>
+    </div>
+
+    <div class="settings-content">
+      <div class="settings-section">
+        <h4 class="settings-section-title">Your Style Profile</h4>
+        <div class="settings-profile-summary" id="settings-profile-summary">
+          <p class="settings-empty-profile">No style answers saved yet.</p>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h4 class="settings-section-title">Experience</h4>
+        <div class="settings-row">
+          <div>
+            <strong>Replay onboarding</strong>
+            <small>Retake the personal style questionnaire and starter closet guide</small>
+          </div>
+          <button type="button" id="btn-replay-onboarding" class="btn-secondary">Replay</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Onboarding Fullscreen Flow -->
+  <div id="onboarding-overlay" class="onboarding-overlay" hidden>
+    <div class="onboarding-shell">
+      <div class="onboarding-topbar" id="ob-topbar">
+        <button type="button" id="ob-btn-back" class="ob-btn-back" aria-label="Go back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          <span>Back</span>
+        </button>
+        <div class="ob-progress-wrap" id="ob-progress-wrap">
+          <div class="ob-progress-track">
+            <div class="ob-progress-fill" id="ob-progress-fill" style="width: 25%;"></div>
+          </div>
+          <span class="ob-step-label" id="ob-step-label">Question 1 of 4</span>
+        </div>
+        <button type="button" id="ob-btn-skip-top" class="ob-btn-skip">Skip</button>
+      </div>
+
+      <div class="onboarding-content">
+        <!-- WELCOME SCREEN -->
+        <div class="ob-step-view active" id="ob-step-welcome">
+          <div class="ob-brand-tag">weari</div>
+          <h1 class="ob-hero-title">Welcome to Weari.</h1>
+          <p class="ob-hero-desc">Your closet has everything you need. Let’s prove it.</p>
+          <div class="ob-welcome-actions">
+            <button type="button" id="ob-btn-get-started" class="ob-btn-primary">Get started</button>
+            <button type="button" id="ob-btn-welcome-skip" class="ob-btn-link">Skip</button>
+          </div>
+        </div>
+
+        <!-- QUIZ 1: WHAT BRINGS YOU TO WEARI -->
+        <div class="ob-step-view" id="ob-step-1" hidden>
+          <h2 class="ob-question">What brings you to Weari today?</h2>
+          <div class="ob-options-list" id="ob-options-goal">
+            <button type="button" class="ob-option-card" data-val="I need outfit ideas">
+              <span class="ob-option-text">I need outfit ideas</span>
+            </button>
+            <button type="button" class="ob-option-card" data-val="I want to wear what I own more">
+              <span class="ob-option-text">I want to wear what I own more</span>
+            </button>
+            <button type="button" class="ob-option-card" data-val="I’m ready to declutter thoughtfully">
+              <span class="ob-option-text">I’m ready to declutter thoughtfully</span>
+            </button>
+            <button type="button" class="ob-option-card" data-val="I want my style to feel more me">
+              <span class="ob-option-text">I want my style to feel more me</span>
+            </button>
+          </div>
+          <button type="button" id="ob-btn-next-1" class="ob-btn-primary ob-action-btn" disabled>Continue</button>
+        </div>
+
+        <!-- QUIZ 2: WHAT IS YOUR STYLE -->
+        <div class="ob-step-view" id="ob-step-2" hidden>
+          <h2 class="ob-question">What is your style?</h2>
+          <p class="ob-instruction">Choose up to 3</p>
+          <div class="ob-options-grid" id="ob-options-styles">
+            <button type="button" class="ob-option-card" data-val="Minimal"><span class="ob-option-text">Minimal</span></button>
+            <button type="button" class="ob-option-card" data-val="Classic"><span class="ob-option-text">Classic</span></button>
+            <button type="button" class="ob-option-card" data-val="Old Money"><span class="ob-option-text">Old Money</span></button>
+            <button type="button" class="ob-option-card" data-val="Romantic"><span class="ob-option-text">Romantic</span></button>
+            <button type="button" class="ob-option-card" data-val="Bohemian"><span class="ob-option-text">Bohemian</span></button>
+            <button type="button" class="ob-option-card" data-val="Bold"><span class="ob-option-text">Bold</span></button>
+            <button type="button" class="ob-option-card" data-val="Streetwear"><span class="ob-option-text">Streetwear</span></button>
+            <button type="button" class="ob-option-card" data-val="Eclectic"><span class="ob-option-text">Eclectic</span></button>
+            <button type="button" class="ob-option-card" data-val="Not sure yet"><span class="ob-option-text">Not sure yet</span></button>
+          </div>
+          <button type="button" id="ob-btn-next-2" class="ob-btn-primary ob-action-btn" disabled>Continue</button>
+        </div>
+
+        <!-- QUIZ 3: WHAT DO YOU DRESS FOR -->
+        <div class="ob-step-view" id="ob-step-3" hidden>
+          <h2 class="ob-question">What do you dress for?</h2>
+          <p class="ob-instruction">Choose any</p>
+          <div class="ob-options-grid" id="ob-options-occasions">
+            <button type="button" class="ob-option-card" data-val="Work"><span class="ob-option-text">Work</span></button>
+            <button type="button" class="ob-option-card" data-val="Casual days"><span class="ob-option-text">Casual days</span></button>
+            <button type="button" class="ob-option-card" data-val="Evenings and dates"><span class="ob-option-text">Evenings and dates</span></button>
+            <button type="button" class="ob-option-card" data-val="Events and weddings"><span class="ob-option-text">Events and weddings</span></button>
+            <button type="button" class="ob-option-card" data-val="Travel"><span class="ob-option-text">Travel</span></button>
+            <button type="button" class="ob-option-card" data-val="Gym"><span class="ob-option-text">Gym</span></button>
+          </div>
+          <button type="button" id="ob-btn-next-3" class="ob-btn-primary ob-action-btn" disabled>Continue</button>
+        </div>
+
+        <!-- QUIZ 4: HOW DO YOU SHOP -->
+        <div class="ob-step-view" id="ob-step-4" hidden>
+          <h2 class="ob-question">How do you shop?</h2>
+          <div class="ob-options-list" id="ob-options-shopping">
+            <button type="button" class="ob-option-card" data-val="I buy something new for every occasion">
+              <span class="ob-option-text">I buy something new for every occasion</span>
+            </button>
+            <button type="button" class="ob-option-card" data-val="Impulse buyer">
+              <span class="ob-option-text">Impulse buyer</span>
+            </button>
+            <button type="button" class="ob-option-card" data-val="Careful planner">
+              <span class="ob-option-text">Careful planner</span>
+            </button>
+            <button type="button" class="ob-option-card" data-val="Thrifter">
+              <span class="ob-option-text">Thrifter</span>
+            </button>
+          </div>
+          <button type="button" id="ob-btn-next-4" class="ob-btn-primary ob-action-btn" disabled>Continue</button>
+        </div>
+
+        <!-- STARTER CLOSET SCREEN -->
+        <div class="ob-step-view" id="ob-step-5" hidden>
+          <h2 class="ob-question">Let’s build your starter closet. Add 5 pieces to get your first styled look.</h2>
+
+          <div class="ob-checklist-container">
+            <div class="ob-checklist-item" id="ob-check-top">
+              <span class="ob-check-box"></span>
+              <span class="ob-check-name">1 top</span>
+            </div>
+            <div class="ob-checklist-item" id="ob-check-bottom">
+              <span class="ob-check-box"></span>
+              <span class="ob-check-name">1 bottom</span>
+            </div>
+            <div class="ob-checklist-item" id="ob-check-layer">
+              <span class="ob-check-box"></span>
+              <span class="ob-check-name">1 dress or layer</span>
+            </div>
+            <div class="ob-checklist-item" id="ob-check-shoes">
+              <span class="ob-check-box"></span>
+              <span class="ob-check-name">1 pair of shoes</span>
+            </div>
+            <div class="ob-checklist-item" id="ob-check-favorite">
+              <span class="ob-check-box"></span>
+              <span class="ob-check-name">1 favorite piece</span>
+            </div>
+          </div>
+
+          <!-- Shown when 5 items exist or demo wardrobe is loaded -->
+          <div class="ob-ready-panel" id="ob-ready-panel" hidden>
+            <p class="ob-ready-message">Your closet is ready.</p>
+            <button type="button" id="ob-btn-first-look" class="ob-btn-primary">See my first look</button>
+          </div>
+
+          <!-- Add pieces buttons -->
+          <div class="ob-starter-btn-row" id="ob-starter-btn-row">
+            <button type="button" id="ob-btn-starter-camera" class="ob-btn-secondary">Scan with camera</button>
+            <button type="button" id="ob-btn-starter-upload" class="ob-btn-secondary">Upload photos</button>
+          </div>
+
+          <div class="ob-demo-row">
+            <button type="button" id="ob-btn-load-demo" class="ob-link-demo">Just exploring? Load the demo wardrobe</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="stylist.js"></script>
   <script src="swap-data.js"></script>

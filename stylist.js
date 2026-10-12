@@ -1,70 +1,87 @@
 // =====================================================
-// Weari stylist — picks an outfit from your wardrobe.
-//
-// THIS IS THE FILE TO SWAP FOR A REAL AI MODEL LATER.
-// The rest of the app only calls suggestOutfit() and
-// expects the same shape back, so as long as a new version
-// keeps that contract, nothing else needs to change.
-//
-//   suggestOutfit(items, occasion, previousIds)
-//     items        – every item in the wardrobe
-//     occasion     – e.g. "work"
-//     previousIds  – ids of the last outfit shown (to avoid repeats)
-//
-//   returns (a Promise of) one of:
-//     { outfit: [{ role: "Top", item }, ...] }
-//     { missing: "Add a bottom tagged 'work' to get a suggestion." }
+// Weari stylist — powered by Gemini API
 // =====================================================
 
-async function suggestOutfit(items, occasion, previousIds = []) {
-  const matching = items.filter((it) => it.occasions.includes(occasion));
-  const of = (cat) => matching.filter((it) => it.category === cat);
+function getOnboardingPreferences() {
+  try {
+    const raw = localStorage.getItem("weari_onboarding_answers");
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return {
+      goal: data.goal || null,
+      styles: Array.isArray(data.styles) ? data.styles : [],
+      occasions: Array.isArray(data.occasions) ? data.occasions : [],
+    };
+  } catch {
+    return null;
+  }
+}
 
-  const tops = of("top");
-  const bottoms = of("bottom");
-  const dresses = of("dress");
-  const shoes = of("shoes");
-  const outerwear = of("outerwear");
-  const accessories = of("accessory");
-
-  // ---- Is there enough to make an outfit? ----
-  const tag = `tagged ‘${occasion}’`;
-  if (!dresses.length && !(tops.length && bottoms.length)) {
-    if (tops.length) return { missing: `Add a bottom ${tag} (or a dress) to get a suggestion.` };
-    if (bottoms.length) return { missing: `Add a top ${tag} (or a dress) to get a suggestion.` };
-    return { missing: `Add a dress, or a top and a bottom, ${tag} to get a suggestion.` };
+async function suggestOutfit(items, occasion, previousIds = [], mustIncludeItemId = null) {
+  if (!items || items.length === 0) {
+    return { missing: "Your wardrobe is empty. Add pieces first to get an outfit suggestion." };
   }
 
-  // ---- Build one random outfit ----
-  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  // Send only necessary wardrobe attributes to keep request light & fast
+  const wardrobeItems = items.map((it) => ({
+    id: it.id,
+    category: it.category,
+    color: it.color,
+    occasions: it.occasions,
+  }));
 
-  function buildOne() {
-    const outfit = [];
-    // Choose between "top + bottom" and "dress", weighted by how many options each has
-    const pairCount = tops.length * bottoms.length;
-    const useDress = dresses.length && Math.random() < dresses.length / (dresses.length + pairCount);
+  const userPreferences = getOnboardingPreferences();
 
-    if (useDress) {
-      outfit.push({ role: "Dress", item: pick(dresses) });
-    } else {
-      outfit.push({ role: "Top", item: pick(tops) });
-      outfit.push({ role: "Bottom", item: pick(bottoms) });
+  const res = await fetch("/api/style", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      occasion,
+      items: wardrobeItems,
+      previousOutfitIds: previousIds,
+      mustIncludeItemId,
+      userPreferences,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Our stylist is busy, tap Try again");
+  }
+
+  const data = await res.json();
+
+  if (!data.canFormOutfit) {
+    return {
+      missing: data.missing || `Add more items tagged '${occasion}' to get a suggestion.`,
+    };
+  }
+
+  // Map returned itemIds back to wardrobe items
+  const itemMap = new Map(items.map((it) => [it.id, it]));
+  const outfit = [];
+
+  if (Array.isArray(data.outfit)) {
+    for (const piece of data.outfit) {
+      const item = itemMap.get(piece.itemId);
+      if (item) {
+        outfit.push({
+          role: piece.role || item.category,
+          item,
+        });
+      }
     }
-    if (shoes.length) outfit.push({ role: "Shoes", item: pick(shoes) });
-    // Extras "if they fit": include sometimes, so suggestions vary
-    if (outerwear.length && Math.random() < 0.5) outfit.push({ role: "Outerwear", item: pick(outerwear) });
-    if (accessories.length && Math.random() < 0.6) outfit.push({ role: "Accessory", item: pick(accessories) });
-    return outfit;
   }
 
-  // ---- Try to make it different from the last one ----
-  const sameAsBefore = (outfit) => {
-    const ids = outfit.map((p) => p.item.id).sort().join();
-    return ids === [...previousIds].sort().join();
+  if (outfit.length === 0) {
+    return {
+      missing: data.missing || `Could not assemble a complete look. Try adding more pieces tagged '${occasion}'.`,
+    };
+  }
+
+  return {
+    outfit,
+    explanation: data.explanation || "",
+    repeated: false,
   };
-
-  let outfit = buildOne();
-  for (let tries = 0; tries < 30 && sameAsBefore(outfit); tries++) outfit = buildOne();
-
-  return { outfit, repeated: sameAsBefore(outfit) };
 }

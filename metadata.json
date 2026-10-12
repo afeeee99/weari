@@ -1,0 +1,9 @@
+{
+  "name": "Weari",
+  "description": "A simple, mobile-friendly wardrobe and community rewear swap application.",
+  "prompt": "Weari wardrobe and clothing swap application",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
