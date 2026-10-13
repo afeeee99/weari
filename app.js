@@ -2811,8 +2811,22 @@ $("#buycheck-view")?.addEventListener("submit", async (e) => {
   }
 });
 
+const BUYCHECK_UNSURE_MSG = "I can’t tell what this is. Try again with just the item, filling the frame, on a plain background.";
+
 function renderBuyCheckResult() {
   const { photo, price, result: r, skipped, saved } = currentBuyCheck;
+  // Not sure what the item is: no verdict, ask for a better photo
+  if (r.category === "unknown" || r.confidence === "low" || !r.verdict) {
+    openBuyCheckView(`
+      <img class="buycheck-photo" src="${photo}" alt="Photo the Buying Brain couldn't read" />
+      <div class="notice buycheck-unsure">
+        <div class="notice-icon">🔍</div>
+        <p>${BUYCHECK_UNSURE_MSG}</p>
+        <button type="button" class="btn-primary btn-block" data-buycheck="rescan">📷 Try again</button>
+        ${r.source === "mock" ? `<span class="buycheck-test">Test mode, not real Gemini</span>` : ""}
+      </div>`);
+    return;
+  }
   const v = BUYCHECK_VERDICTS[r.verdict] || BUYCHECK_VERDICTS["try rewear first"];
   openBuyCheckView(`
     <img class="buycheck-photo" src="${photo}" alt="${escapeHtml(r.item_name || "Item you're thinking of buying")}" />
@@ -2847,6 +2861,11 @@ $("#buycheck-view")?.addEventListener("click", (e) => {
   if (!action || !currentBuyCheck) return;
 
   if (action === "retry") runBuyCheck(currentBuyCheck.photo, currentBuyCheck.price);
+
+  if (action === "rescan") {
+    closeBuyCheckView();
+    startCameraScan("buycheck");
+  }
 
   if (action === "edit" || action === "cancel-edit") {
     currentBuyCheck.editing = action === "edit";

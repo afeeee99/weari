@@ -3567,3 +3567,5 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 10px; padding: 0; }
 .buycheck-edit-row { display: flex; gap: 10px; }
 .buycheck-edit-actions { display: flex; gap: 8px; }
 .buycheck-edit-actions button { flex: 1; padding: 11px 14px; }
+.buycheck-unsure p { font-size: 15px; }
+.buycheck-unsure .buycheck-test { display: block; margin-top: 10px; }
