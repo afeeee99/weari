@@ -11,9 +11,9 @@ import { buyingBrain, buyingBrainRules, SHOP_VERDICTS, pairsWith } from './buyin
 const GEMINI_MODEL = 'gemini-3.8-flash';
 const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash-lite'; // tried once, only when GEMINI_MODEL answers 503 (busy)
 const FALLBACK_WAIT_MS = 2000;
-// Shared by every AI endpoint (tag, style, review, chat): one counter per visitor and one for the app
-const PER_VISITOR_DAILY_LIMIT = 15; // AI requests per visitor (IP address) per day
-const GLOBAL_DAILY_CAP = 500; // AI requests for the whole app per day
+// Shared by every AI endpoint (tag, style, review, chat, buycheck): one counter per visitor and one for the app
+const PER_VISITOR_DAILY_LIMIT = 40; // AI requests per visitor (IP address) per day
+const GLOBAL_DAILY_CAP = 600; // AI requests for the whole app per day
 
 // The app's own lists (must match app.js)
 const CATEGORIES = ['top', 'bottom', 'dress', 'shoes', 'outerwear', 'accessory'];

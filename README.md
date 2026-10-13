@@ -59,8 +59,8 @@ answers, and the app labels them as test mode rather than Gemini.
 - One Gemini call per request. The model is set in `GEMINI_MODEL` at the top of `server.js`.
   Only exception: if that model answers 503 (busy), the server waits 2 seconds and tries
   `GEMINI_FALLBACK_MODEL` (the lighter `gemini-3.5-flash-lite`) once. Never on a 429 or any other error.
-- Limits (top of `server.js`): `PER_VISITOR_DAILY_LIMIT` (15 per visitor per day) and
-  `GLOBAL_DAILY_CAP` (whole app per day). They are kept in memory, so they reset at
+- Limits (top of `server.js`), shared by all AI features: `PER_VISITOR_DAILY_LIMIT` (40 per visitor per day) and
+  `GLOBAL_DAILY_CAP` (600 for the whole app per day). They are kept in memory, so they reset at
   midnight UTC or when the server restarts.
 - On any error, including Gemini's 429 "too many requests", the app falls back to basic
   rules and shows: *"The stylist needs a short break, so this is a basic suggestion."*
