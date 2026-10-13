@@ -3469,38 +3469,47 @@ async function loadDemoWardrobe() {
   toast("Loaded 14 demo wardrobe pieces ✨");
 }
 
-async function resetApp() {
-  if (!confirm("Reset all data? This will clear your wardrobe, saved outfits, and karma.")) return;
+// Every storage key Weari has ever used (current + legacy). Keys are not renamed;
+// we just make sure Reset clears all of them.
+function getAllWeariStorageKeys() {
+  const known = [
+    BACKUP_ITEMS_KEY, KARMA_STORAGE_KEY, COMPLETED_SWAPS_KEY, PURCHASES_AVOIDED_KEY,
+    SAVED_OUTFITS_KEY, REQUESTS_KEY, ONBOARDING_COMPLETED_KEY, ONBOARDING_ANSWERS_KEY,
+    PROFILE_KEY, PROFILE_DISMISSED_KEY, PROFILE_FIRST_NAME_KEY, PROFILE_EMAIL_KEY,
+    WEARI_PLUS_WAITLIST_KEY, FAVORITES_STORAGE_KEY, WEEKLY_PLAN_KEY, PLAN_REPEAT_KEY,
+    "weari-favorite-outfits",
+    ...LEGACY_ITEM_STORAGE_KEYS, ...LEGACY_WEAR_COUNT_KEYS, ...LEGACY_OUTFIT_KEYS,
+    ...LEGACY_KARMA_KEYS, ...LEGACY_REQUEST_KEYS,
+  ];
+  const keys = new Set();
+  // Include both the dash and underscore spelling of every key
+  known.forEach((k) => {
+    keys.add(k);
+    keys.add(k.replace(/_/g, "-"));
+    keys.add(k.replace(/-/g, "_"));
+  });
+  // Catch anything else saved under a "weari" name
   try {
-    await dbRun("readwrite", (s) => s.clear());
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /^weari/i.test(k)) keys.add(k);
+    }
+  } catch {}
+  return [...keys];
+}
+
+async function resetApp() {
+  if (!confirm("Reset all data? This permanently clears your wardrobe, photos, outfits, plans, swaps, karma and profile on this device.")) return;
+  try {
+    await dbRun("readwrite", (s) => s.clear()); // the "weari" IndexedDB (items + photos)
   } catch (e) {
     console.warn("DB reset error:", e);
   }
   try {
-    localStorage.removeItem(BACKUP_ITEMS_KEY);
-    localStorage.removeItem(KARMA_STORAGE_KEY);
-    localStorage.removeItem("weari-saved-outfits");
-    localStorage.removeItem("weari_favorite_outfits");
-    localStorage.removeItem("weari_weekly_plan");
-    localStorage.removeItem("weari_plan_repeat_weekly");
-    localStorage.removeItem(REQUESTS_KEY);
-    localStorage.removeItem(COMPLETED_SWAPS_KEY);
-    localStorage.removeItem(PURCHASES_AVOIDED_KEY);
-    localStorage.removeItem("weari_plus_waitlist");
-    localStorage.removeItem("weari_profile_first_name");
-    localStorage.removeItem("weari_profile_email");
+    getAllWeariStorageKeys().forEach((k) => localStorage.removeItem(k));
   } catch {}
-  closeSettings();
-  showScreen("wardrobe");
-  renderWardrobe();
-  renderProfileScreen();
-  renderKarma();
-  renderInsights();
-  renderSavedOutfits();
-  if (typeof renderFavorites === "function") renderFavorites();
-  if (typeof renderWeeklyPlan === "function") renderWeeklyPlan();
-  updateKarmaChip();
-  toast("App reset to initial state");
+  // Reload so nothing still held in memory gets saved back
+  location.reload();
 }
 
 // Event bindings for demo and reset buttons
