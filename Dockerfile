@@ -10,7 +10,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # Copy the server and the app's public files (never .env — see .dockerignore)
-COPY server.js index.html styles.css app.js stylist.js swap-data.js ./
+COPY server.js buying-brain.js index.html styles.css app.js stylist.js swap-data.js ./
 
 USER node
 EXPOSE 8080
