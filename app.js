@@ -1125,6 +1125,7 @@ async function autoTagPhoto(smallPhotoDataUrl) {
     const autoName = `${autoColor.charAt(0).toUpperCase() + autoColor.slice(1)} ${autoCategory}`;
     const data = {
       success: true,
+      source: "rules", // "gemini" only when the tags really came back from Gemini
       data: {
         name: autoName,
         category: autoCategory,
@@ -1139,7 +1140,8 @@ async function autoTagPhoto(smallPhotoDataUrl) {
     if (statusEl) statusEl.hidden = true;
     if (btnAutotag) btnAutotag.hidden = true;
     if (badgeEl) {
-      badgeEl.innerHTML = `<span class="sparkle-icon">✨</span><span class="tag-badge-text">Tagged by Gemini</span>`;
+      const label = data.source === "gemini" ? "Tagged by Gemini" : "Auto-tagged (basic rules)";
+      badgeEl.innerHTML = `<span class="sparkle-icon">✨</span><span class="tag-badge-text">${label}</span>`;
       badgeEl.hidden = false;
     }
 
