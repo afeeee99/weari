@@ -1915,17 +1915,23 @@ $("#btn-manual-review")?.addEventListener("click", async () => {
   }
 
   try {
-    // Generate thoughtful stylist review client side without Gemini calls
-    const review = `A thoughtful, cohesive look combining ${activePieces.map((p) => describe(p)).join(", ")}. Beautiful color harmony and silhouette for conscious everyday styling.`;
-    const data = { success: true, review };
-
+    // Only category, color and name of each piece are sent (no photos)
+    const items = activePieces.map((it) => ({
+      role: it.category.charAt(0).toUpperCase() + it.category.slice(1),
+      category: it.category,
+      color: it.color,
+      name: plainText(it.name).slice(0, 40),
+    }));
+    const res = await callApi("/api/review", { outfitName, items }, { timeoutMs: 20000 });
+    const label = res.source === "mock" ? "✨ Stylist Review (test mode, not real Gemini)" : "✨ Stylist Review by Gemini";
     if (reviewBox) {
       reviewBox.innerHTML = `
-        <div class="review-header">✨ Stylist Review</div>
-        <p class="review-text">"${escapeHtml(data.review)}"</p>`;
+        <div class="review-header">${label}</div>
+        <p class="review-text">"${escapeHtml(res.review)}"</p>`;
     }
   } catch (err) {
-    const msg = "Our stylist is busy right now, but your outfit looks great! Tap to ask again.";
+    console.warn("Gemini review unavailable:", err.message);
+    const msg = "Our stylist is taking a short break, but your outfit looks great! Tap to ask again in a moment.";
     if (reviewBox) {
       reviewBox.innerHTML = `
         <div class="review-header">✨ Stylist Review</div>

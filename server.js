@@ -84,12 +84,12 @@ async function callModel(model, contents, schema) {
   return schema ? JSON.parse(text) : text;
 }
 
-async function askGemini({ contents, schema }) {
+async function askGemini({ contents, schema, allowFallback = true }) {
   if (!ai) throw Object.assign(new Error('Gemini API key is not configured'), { status: 503 });
   try {
     return await callModel(GEMINI_MODEL, contents, schema);
   } catch (err) {
-    if (err?.status !== 503) throw err;
+    if (!allowFallback || err?.status !== 503) throw err;
     console.warn(`${GEMINI_MODEL} is busy (503); trying ${GEMINI_FALLBACK_MODEL} once in ${FALLBACK_WAIT_MS / 1000}s`);
     await new Promise((r) => setTimeout(r, FALLBACK_WAIT_MS));
     return callModel(GEMINI_FALLBACK_MODEL, contents, schema);
@@ -312,9 +312,9 @@ app.post('/api/style', rateLimit, async (req, res) => {
 });
 
 // =====================================================
-// POST /api/review — optional two-sentence review of a user-made outfit
+// POST /api/review — two-sentence review of a look made in "Create your own"
 //   body: { outfitName, items: [{ role, category, color, name }] }
-//   reply: { ok, source, review }
+//   reply: { ok, source, review }   (exactly one Gemini call, no 503 fallback)
 // =====================================================
 app.post('/api/review', rateLimit, async (req, res) => {
   try {
@@ -327,6 +327,7 @@ app.post('/api/review', rateLimit, async (req, res) => {
     const review = MOCK_GEMINI
       ? 'These pieces share an easy, balanced palette that feels put together. (Test mode: this is a mock answer, not a real Gemini response.)'
       : await askGemini({
+          allowFallback: false, // reviews are optional: exactly one call, no retries
           contents:
             `You are a friendly personal stylist. Review this outfit called "${String(req.body?.outfitName || 'My look').slice(0, 40)}":\n${summary}\n\n` +
             'Write exactly two sentences: first, a compliment on how the pieces work together; second, a quick styling tip. No greetings or bullet points.',
