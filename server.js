@@ -4,448 +4,345 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// =====================================================
+// Settings — change these in one place
+// =====================================================
+const GEMINI_MODEL = 'gemini-3.8-flash';
+const PER_VISITOR_DAILY_LIMIT = 15; // AI requests per visitor (IP address) per day
+const GLOBAL_DAILY_CAP = 500; // AI requests for the whole app per day
+
+// The app's own lists (must match app.js)
+const CATEGORIES = ['top', 'bottom', 'dress', 'shoes', 'outerwear', 'accessory'];
+const COLORS = ['black', 'white', 'grey', 'beige', 'brown', 'red', 'pink', 'orange', 'yellow', 'green', 'blue', 'navy', 'purple', 'multi'];
+const OCCASIONS = ['casual', 'work', 'party', 'wedding', 'date night', 'formal', 'sport', 'travel', 'beach'];
+const ROLES = ['Top', 'Bottom', 'Dress', 'Shoes', 'Outerwear', 'Accessory'];
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load .env (local development only — never committed). Cloud Run sets env vars directly.
+const envFile = path.join(__dirname, '.env');
+if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+
+const PORT = process.env.PORT || 8080;
+const MOCK_GEMINI = process.env.MOCK_GEMINI === 'true';
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
+const ai = GEMINI_API_KEY && !MOCK_GEMINI ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.set('trust proxy', 1); // Cloud Run sits behind one Google proxy; this gives the real visitor IP
+app.use(express.json({ limit: '1mb' }));
 
-app.use(express.json({ limit: '5mb' }));
-app.use(express.static(__dirname));
+// Serve only the app's public files (not server.js, package.json, node_modules, .env…)
+const PUBLIC_FILES = ['index.html', 'styles.css', 'app.js', 'stylist.js', 'swap-data.js'];
+app.get(['/', ...PUBLIC_FILES.map((f) => `/${f}`)], (req, res) => {
+  const file = req.path === '/' ? 'index.html' : req.path.slice(1);
+  res.sendFile(path.join(__dirname, file));
+});
 
-function getGeminiApiKey() {
-  // 1. Try process.env if set and not a placeholder
-  const envKey = (process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY || '').trim();
-  if (envKey && envKey !== 'MY_GEMINI_API_KEY' && envKey !== 'undefined' && envKey !== 'null') {
-    return envKey;
+// =====================================================
+// Daily limits (kept in memory: they reset at midnight UTC or when the server restarts)
+// =====================================================
+let usageDay = '';
+let globalCount = 0;
+const visitorCounts = new Map();
+
+function rateLimit(req, res, next) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== usageDay) {
+    usageDay = today;
+    globalCount = 0;
+    visitorCounts.clear();
   }
-
-  // 2. Check AI Studio dev secrets file (/app/.dev.env.json or relative paths)
-  const devEnvPaths = [
-    '/app/.dev.env.json',
-    path.resolve(__dirname, '../.dev.env.json'),
-    path.resolve(__dirname, '.dev.env.json'),
-  ];
-  for (const p of devEnvPaths) {
-    try {
-      if (fs.existsSync(p)) {
-        const data = JSON.parse(fs.readFileSync(p, 'utf8'));
-        const fileKey = (data.GEMINI_API_KEY || data.API_KEY || data.GOOGLE_API_KEY || '').trim();
-        if (fileKey && fileKey !== 'MY_GEMINI_API_KEY') {
-          return fileKey;
-        }
-      }
-    } catch {
-      // ignore read/parse errors
-    }
+  const visitor = req.ip || 'unknown';
+  const used = visitorCounts.get(visitor) || 0;
+  if (used >= PER_VISITOR_DAILY_LIMIT) {
+    return res.status(429).json({ ok: false, error: 'daily_limit', message: 'You have used today’s AI requests.' });
   }
-
-  // 3. Check for standard .env files
-  const dotEnvPaths = [
-    path.resolve(__dirname, '.env'),
-    path.resolve(__dirname, '../.env'),
-    path.resolve(__dirname, '.env.local'),
-  ];
-  for (const p of dotEnvPaths) {
-    try {
-      if (fs.existsSync(p)) {
-        const content = fs.readFileSync(p, 'utf8');
-        const match = content.match(/^\s*(?:GEMINI_API_KEY|API_KEY|GOOGLE_API_KEY)\s*=\s*(.*)$/m);
-        if (match && match[1]) {
-          const parsed = match[1].trim().replace(/^['"]|['"]$/g, '');
-          if (parsed && parsed !== 'MY_GEMINI_API_KEY') {
-            return parsed;
-          }
-        }
-      }
-    } catch {}
+  if (globalCount >= GLOBAL_DAILY_CAP) {
+    return res.status(429).json({ ok: false, error: 'global_cap', message: 'The stylist is fully booked today.' });
   }
-
-  return envKey;
+  visitorCounts.set(visitor, used + 1);
+  globalCount++;
+  next();
 }
 
-// POST /api/tag — Gemini vision auto-tagging for wardrobe pieces
-app.post('/api/tag', async (req, res) => {
+// One Gemini call, no retries. Returns parsed JSON (or text when no schema is given).
+async function askGemini({ contents, schema }) {
+  if (!ai) throw Object.assign(new Error('Gemini API key is not configured'), { status: 503 });
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents,
+    config: {
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      ...(schema && { responseMimeType: 'application/json', responseSchema: schema }),
+    },
+  });
+  const text = (response?.text || '').trim();
+  if (!text) throw new Error('Empty response from Gemini');
+  return schema ? JSON.parse(text) : text;
+}
+
+const source = () => (MOCK_GEMINI ? 'mock' : 'gemini');
+const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
+
+// =====================================================
+// POST /api/tag — one photo in, tags out
+//   body: { image: "data:image/jpeg;base64,..." }  (resized to 512px by the browser)
+//   reply: { ok, source, tags: { name, category, color, occasions } }
+// =====================================================
+const TAG_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    name: { type: Type.STRING, description: 'Short natural item name, e.g. "White linen shirt"' },
+    category: { type: Type.STRING, enum: CATEGORIES },
+    color: { type: Type.STRING, enum: COLORS },
+    occasions: { type: Type.ARRAY, items: { type: Type.STRING, enum: OCCASIONS } },
+  },
+  required: ['name', 'category', 'color', 'occasions'],
+};
+
+const MOCK_TAGS = [
+  { name: 'White linen shirt', category: 'top', color: 'white', occasions: ['casual', 'work', 'travel'] },
+  { name: 'Dark wash jeans', category: 'bottom', color: 'navy', occasions: ['casual', 'travel'] },
+  { name: 'Black midi dress', category: 'dress', color: 'black', occasions: ['party', 'date night', 'formal'] },
+  { name: 'White leather sneakers', category: 'shoes', color: 'white', occasions: ['casual', 'travel', 'sport'] },
+  { name: 'Camel wool coat', category: 'outerwear', color: 'brown', occasions: ['work', 'formal'] },
+];
+
+function cleanTags(raw) {
+  const category = CATEGORIES.includes(raw?.category) ? raw.category : null;
+  const color = COLORS.includes(raw?.color) ? raw.color : null;
+  const occasions = [...new Set((raw?.occasions || []).filter((o) => OCCASIONS.includes(o)))].slice(0, 3);
+  const name = String(raw?.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (!category || !color || !occasions.length) throw new Error('Gemini returned tags outside the allowed lists');
+  return { name: name || `${color} ${category}`, category, color, occasions };
+}
+
+app.post('/api/tag', rateLimit, async (req, res) => {
   try {
-    const apiKey = getGeminiApiKey();
-    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-      return res.status(500).json({
-        success: false,
-        error: "Couldn't auto-tag this one, please fill it in yourself",
-      });
-    }
+    const match = String(req.body?.image || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) return res.status(400).json({ ok: false, error: 'bad_image', message: 'Send one photo as a data URL.' });
 
-    const { image } = req.body;
-    if (!image || typeof image !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: "Couldn't auto-tag this one, please fill it in yourself",
-      });
-    }
-
-    let mimeType = 'image/jpeg';
-    let base64Data = image;
-
-    const match = image.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      mimeType = match[1];
-      base64Data = match[2];
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-
-    const prompt = `You are tagging a single clothing item for a wardrobe app. Look at the main garment in the photo, ignore the background, hanger and any people. Choose the closest category and color from the allowed lists. Pick 1 to 3 occasions that fit. If you are unsure, choose the closest option and set confidence to low.`;
-
-    // Exactly one Gemini call with no automatic retries or fallback models
-    // Using gemini-3.1-flash-lite with thinking disabled (thinkingBudget: 0) for fastest response
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite',
-      contents: {
-        parts: [
+    let raw;
+    if (MOCK_GEMINI) {
+      raw = pickRandom(MOCK_TAGS);
+    } else {
+      raw = await askGemini({
+        schema: TAG_SCHEMA,
+        contents: [
+          { inlineData: { mimeType: match[1], data: match[2] } },
           {
-            inlineData: {
-              mimeType,
-              data: base64Data,
-            },
-          },
-          {
-            text: prompt,
+            text:
+              'You are tagging a single clothing item for a wardrobe app. Look at the main garment and ignore the ' +
+              'background, hanger and any people. Choose the closest category and main color from the allowed lists, ' +
+              'pick 1 to 3 fitting occasions, and give it a short natural name (max 4 words).',
           },
         ],
-      },
-      config: {
-        thinkingConfig: { thinkingBudget: 0 },
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: {
-              type: Type.STRING,
-              description: 'A short, natural item name like "White linen shirt"',
-            },
-            category: {
-              type: Type.STRING,
-              enum: ['top', 'bottom', 'dress', 'shoes', 'outerwear', 'accessory'],
-              description: 'Closest category from the allowed list',
-            },
-            color: {
-              type: Type.STRING,
-              enum: [
-                'black', 'white', 'grey', 'beige', 'brown', 'red',
-                'pink', 'orange', 'yellow', 'green', 'blue', 'navy',
-                'purple', 'multi',
-              ],
-              description: 'Closest main color from the allowed list',
-            },
-            occasions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.STRING,
-                enum: [
-                  'casual', 'work', 'party', 'wedding', 'date night',
-                  'formal', 'sport', 'travel', 'beach',
-                ],
-              },
-              description: '1 to 3 fitting occasions from the allowed list',
-            },
-            confidence: {
-              type: Type.STRING,
-              enum: ['high', 'low'],
-              description: 'Confidence in the tags: "high" if clear, "low" if ambiguous or unsure',
-            },
-          },
-          required: ['name', 'category', 'color', 'occasions', 'confidence'],
-        },
-      },
-    });
-
-    const jsonStr = response.text ? response.text.trim() : '{}';
-    const parsed = JSON.parse(jsonStr);
-
-    return res.json({
-      success: true,
-      data: parsed,
-    });
+      });
+    }
+    res.json({ ok: true, source: source(), tags: cleanTags(raw) });
   } catch (err) {
-    console.error('Error in /api/tag from Gemini:', err.message || err);
-    const statusCode = err.status === 429 ? 429 : 500;
-    return res.status(statusCode).json({
-      success: false,
-      error: "Couldn't auto-tag this one, please fill it in yourself",
-    });
+    sendError(res, '/api/tag', err);
   }
 });
 
-app.post('/api/style', async (req, res) => {
-  try {
-    const apiKey = getGeminiApiKey();
-    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-      return res.status(500).json({
-        error: 'Gemini API key is not configured. Please add your key in Settings > Secrets.',
-      });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
+// =====================================================
+// POST /api/style — occasion + compact wardrobe in, outfit out
+//   body: {
+//     occasion: "work",
+//     wardrobe: "id | name | category | color | occasions" (one item per line, no photos),
+//     preferences: { goal, styles, occasions },   (only these three are used)
+//     previousOutfitIds: [...], mustIncludeItemId: "..."
+//   }
+//   reply: { ok, source, canFormOutfit, missing, outfit: [{ itemId, role }], explanation }
+// =====================================================
+const STYLE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    canFormOutfit: { type: Type.BOOLEAN },
+    missing: { type: Type.STRING, description: 'If no outfit is possible, what piece to add (one short sentence)' },
+    outfit: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          itemId: { type: Type.STRING, description: 'Exact id from the wardrobe list' },
+          role: { type: Type.STRING, enum: ROLES },
         },
+        required: ['itemId', 'role'],
       },
-    });
+    },
+    explanation: { type: Type.STRING, description: 'Exactly two sentences on why the pieces work for the occasion' },
+  },
+  required: ['canFormOutfit', 'explanation'],
+};
 
-    const { occasion, items, previousOutfitIds, mustIncludeItemId, userPreferences } = req.body;
+// Turn the compact wardrobe text back into items so we can check Gemini's answer
+function parseWardrobe(text) {
+  return String(text || '')
+    .split('\n')
+    .slice(0, 300)
+    .map((line) => line.split('|').map((s) => s.trim()))
+    .filter((p) => p.length >= 5 && p[0])
+    .map(([id, name, category, color, occasions]) => ({
+      id: id.slice(0, 80),
+      name: name.slice(0, 40),
+      category,
+      color,
+      occasions: occasions.split(',').map((o) => o.trim()).filter(Boolean),
+    }));
+}
 
-    if (!occasion || !Array.isArray(items)) {
-      return res.status(400).json({ error: 'Occasion and wardrobe items array are required.' });
+const asList = (v, allowed, max) =>
+  (Array.isArray(v) ? v : []).map(String).filter((x) => !allowed || allowed.includes(x)).slice(0, max);
+
+// Only goal, styles and occasions are ever passed on — nothing else from the profile
+function cleanPreferences(p) {
+  return {
+    goal: typeof p?.goal === 'string' ? p.goal.slice(0, 80) : null,
+    styles: asList(p?.styles, null, 5).map((s) => s.slice(0, 30)),
+    occasions: asList(p?.occasions, OCCASIONS, 9),
+  };
+}
+
+const roleFor = (category) =>
+  ({ top: 'Top', bottom: 'Bottom', dress: 'Dress', shoes: 'Shoes', outerwear: 'Outerwear', accessory: 'Accessory' })[category];
+
+// Make sure the outfit only uses real wardrobe ids and is complete (dress, or top + bottom)
+function checkOutfit(raw, items) {
+  if (!raw?.canFormOutfit) {
+    return { canFormOutfit: false, missing: String(raw?.missing || 'Add a few more pieces for this occasion.').slice(0, 200), outfit: [] };
+  }
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const seen = new Set();
+  const outfit = (raw.outfit || [])
+    .filter((p) => byId.has(p.itemId) && !seen.has(p.itemId) && seen.add(p.itemId))
+    .map((p) => ({ itemId: p.itemId, role: roleFor(byId.get(p.itemId).category) }));
+  const roles = outfit.map((p) => p.role);
+  if (!(roles.includes('Dress') || (roles.includes('Top') && roles.includes('Bottom')))) {
+    throw new Error('Gemini returned an incomplete outfit');
+  }
+  return { canFormOutfit: true, outfit, explanation: String(raw.explanation || '').slice(0, 400) };
+}
+
+function mockStyle(occasion, items, previousIds) {
+  const fits = items.filter((it) => it.occasions.includes(occasion));
+  const pool = fits.length ? fits : items;
+  const fresh = (cat) => {
+    const list = pool.filter((it) => it.category === cat);
+    return list.find((it) => !previousIds.includes(it.id)) || list[0];
+  };
+  const dress = fresh('dress');
+  const top = fresh('top');
+  const bottom = fresh('bottom');
+  const base = dress && Math.random() < 0.5 ? [dress] : top && bottom ? [top, bottom] : dress ? [dress] : null;
+  if (!base) {
+    const need = top ? 'a bottom' : bottom ? 'a top' : 'a dress, or a top and a bottom,';
+    return { canFormOutfit: false, missing: `Add ${need} tagged '${occasion}' to get a suggestion.` };
+  }
+  const extras = [fresh('shoes'), fresh('outerwear'), fresh('accessory')].filter(Boolean);
+  const outfit = [...base, ...extras].map((it) => ({ itemId: it.id, role: roleFor(it.category) }));
+  const lead = base.map((it) => it.name.toLowerCase()).join(' with the ');
+  return {
+    canFormOutfit: true,
+    outfit,
+    explanation: `The ${lead} keeps this look polished and easy for ${occasion}. (Test mode: this is a mock answer, not a real Gemini response.)`,
+  };
+}
+
+app.post('/api/style', rateLimit, async (req, res) => {
+  try {
+    const occasion = String(req.body?.occasion || '');
+    if (!OCCASIONS.includes(occasion)) {
+      return res.status(400).json({ ok: false, error: 'bad_occasion', message: 'Pick one of the app’s occasions.' });
     }
+    const items = parseWardrobe(req.body?.wardrobe);
+    if (!items.length) {
+      return res.json({ ok: true, source: source(), canFormOutfit: false, missing: 'Add some pieces to your wardrobe first.', outfit: [] });
+    }
+    const prefs = cleanPreferences(req.body?.preferences);
+    const previousIds = asList(req.body?.previousOutfitIds, null, 10);
+    const mustInclude = items.some((it) => it.id === req.body?.mustIncludeItemId) ? req.body.mustIncludeItemId : null;
 
-    if (items.length === 0) {
-      return res.json({
-        canFormOutfit: false,
-        missing: 'Your wardrobe is empty. Add pieces first to get an outfit recommendation.',
-        outfit: [],
-        explanation: 'Add your clothes first so I can style an outfit for you.',
+    let raw;
+    if (MOCK_GEMINI) {
+      raw = mockStyle(occasion, items, previousIds);
+    } else {
+      const prefLines = [
+        prefs.goal && `- Wardrobe goal: ${prefs.goal}`,
+        prefs.styles.length && `- Preferred styles: ${prefs.styles.join(', ')}`,
+        prefs.occasions.length && `- Usually dresses for: ${prefs.occasions.join(', ')}`,
+      ].filter(Boolean);
+      raw = await askGemini({
+        schema: STYLE_SCHEMA,
+        contents: [
+          `You are a friendly personal stylist. Build ONE outfit for the occasion "${occasion}" using ONLY items from this wardrobe.`,
+          `Wardrobe (id | name | category | color | occasions):\n${items
+            .map((it) => `${it.id} | ${it.name} | ${it.category} | ${it.color} | ${it.occasions.join(', ')}`)
+            .join('\n')}`,
+          prefLines.length ? `User preferences:\n${prefLines.join('\n')}` : '',
+          previousIds.length ? `They just saw an outfit with ids ${previousIds.join(', ')}; suggest a different combination if possible.` : '',
+          mustInclude ? `The outfit MUST include the item with id "${mustInclude}".` : '',
+          'Rules: an outfit is either one dress, or one top plus one bottom. Add shoes if available, and outerwear or an accessory only if it fits the occasion. ' +
+            'Prefer items tagged for this occasion. If no complete outfit is possible, set canFormOutfit to false and say in "missing" what to add. ' +
+            'The explanation must be exactly two sentences, warm and specific.',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
       });
     }
-
-    const previousNote =
-      Array.isArray(previousOutfitIds) && previousOutfitIds.length > 0
-        ? `The user already saw an outfit with item IDs: ${previousOutfitIds.join(', ')}. Please suggest a DIFFERENT outfit combination if possible.`
-        : '';
-
-    const mustIncludeNote = mustIncludeItemId
-      ? `CRITICAL: The user wants an outfit specifically styling the wardrobe piece with ID "${mustIncludeItemId}". You MUST include this item in the outfit.`
-      : '';
-
-    let preferenceNote = '';
-    if (userPreferences && typeof userPreferences === 'object') {
-      const parts = [];
-      if (userPreferences.goal) {
-        parts.push(`- Wardrobe goal: "${userPreferences.goal}"`);
-      }
-      if (Array.isArray(userPreferences.styles) && userPreferences.styles.length > 0) {
-        parts.push(`- Preferred style aesthetics: ${userPreferences.styles.join(', ')}`);
-      }
-      if (Array.isArray(userPreferences.occasions) && userPreferences.occasions.length > 0) {
-        parts.push(`- Regular dressing occasions: ${userPreferences.occasions.join(', ')}`);
-      }
-      if (parts.length > 0) {
-        preferenceNote = `
-User style preferences:
-${parts.join('\n')}
-Please tailor the outfit combination and your two-sentence explanation to reflect their personal style preferences and goal.
-`.trim();
-      }
-    }
-
-    const prompt = `
-You are an expert personal fashion stylist.
-The user wants an outfit recommendation for the occasion: "${occasion}".
-
-${preferenceNote}
-
-Here are the items available in their wardrobe:
-${JSON.stringify(items, null, 2)}
-
-${previousNote}
-${mustIncludeNote}
-
-Rules:
-1. Build one flattering, cohesive outfit using ONLY items from the wardrobe list provided above.
-   A complete outfit must consist of:
-   - A "dress" (plus optional shoes, outerwear, or accessory), OR
-   - A "top" AND a "bottom" (plus optional shoes, outerwear, or accessory).
-2. If the user's wardrobe lacks the necessary pieces to form a complete outfit for this occasion (e.g. no dress, or missing a top or bottom), set canFormOutfit to false and in 'missing' describe what type of item they need to add.
-3. If an outfit can be formed, set canFormOutfit to true. Include each chosen item in the 'outfit' array with:
-   - itemId: the exact 'id' from the wardrobe list
-   - role: "Top", "Bottom", "Dress", "Shoes", "Outerwear", or "Accessory"
-4. In 'explanation': Provide EXACTLY two sentences explaining why these specific pieces work together for the chosen occasion ("${occasion}"). Keep the tone helpful, encouraging, and stylish.
-`.trim();
-
-    const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
-    let response = null;
-    let lastError = null;
-
-    for (const model of candidateModels) {
-      const isGemini3 = model.startsWith('gemini-3');
-      const modelConfig = {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            canFormOutfit: {
-              type: Type.BOOLEAN,
-              description: 'True if an outfit can be formed from the wardrobe, false otherwise',
-            },
-            missing: {
-              type: Type.STRING,
-              description: 'Explanation of what piece is needed if canFormOutfit is false',
-            },
-            outfit: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  itemId: {
-                    type: Type.STRING,
-                    description: 'The exact id of the item from the wardrobe list',
-                  },
-                  role: {
-                    type: Type.STRING,
-                    description: 'The outfit role (e.g. Top, Bottom, Dress, Shoes, Outerwear, Accessory)',
-                  },
-                },
-                required: ['itemId', 'role'],
-              },
-            },
-            explanation: {
-              type: Type.STRING,
-              description: 'Exactly 2 sentences explaining why the pieces work together for the occasion',
-            },
-          },
-          required: ['canFormOutfit', 'explanation'],
-        },
-      };
-
-      if (isGemini3) {
-        modelConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
-      }
-
-      // Retry up to 3 times with a short wait between attempts
-      let succeeded = false;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          response = await ai.models.generateContent({
-            model,
-            contents: prompt,
-            config: modelConfig,
-          });
-          if (response && response.text) {
-            succeeded = true;
-            break;
-          }
-        } catch (err) {
-          lastError = err;
-          console.warn(`Model ${model} attempt ${attempt}/3 failed:`, err.message || err);
-
-          // If model is unsupported/not found, break immediately to next model
-          if (err.status === 404 || err.message?.includes('not found') || err.message?.includes('no longer available')) {
-            break;
-          }
-
-          if (attempt < 3) {
-            // Short wait between attempts (1s, 2s)
-            await new Promise((r) => setTimeout(r, attempt * 1000));
-          }
-        }
-      }
-
-      if (succeeded && response) {
-        break;
-      }
-    }
-
-    if (!response || !response.text) {
-      return res.status(503).json({
-        error: 'Our stylist is busy, tap Try again',
-      });
-    }
-
-    const jsonStr = response.text.trim();
-    const parsed = JSON.parse(jsonStr);
-    return res.json(parsed);
+    res.json({ ok: true, source: source(), ...checkOutfit(raw, items) });
   } catch (err) {
-    console.error('Error generating outfit from Gemini:', err);
-    return res.status(503).json({
-      error: 'Our stylist is busy, tap Try again',
-    });
+    sendError(res, '/api/style', err);
   }
 });
 
-// POST /api/review — Optional Gemini review for a user-created outfit
-app.post('/api/review', async (req, res) => {
+// =====================================================
+// POST /api/review — optional two-sentence review of a user-made outfit
+//   body: { outfitName, items: [{ role, category, color, name }] }
+//   reply: { ok, source, review }
+// =====================================================
+app.post('/api/review', rateLimit, async (req, res) => {
   try {
-    const apiKey = getGeminiApiKey();
-    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-      return res.status(503).json({
-        success: false,
-        error: "Our stylist is busy right now, but your outfit looks great! Tap to ask again.",
-      });
-    }
-
-    const { items, outfitName } = req.body;
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Please add items to your outfit before asking for a review.",
-      });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-
-    const itemsSummary = items
-      .map((it) => `- ${it.role || it.category}: ${it.color || ''} ${it.name || it.category}`.trim())
+    const items = (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, 8);
+    if (!items.length) return res.status(400).json({ ok: false, error: 'no_items', message: 'Add items to your outfit first.' });
+    const summary = items
+      .map((it) => `- ${String(it.role || it.category || '').slice(0, 20)}: ${String(it.color || '').slice(0, 20)} ${String(it.name || it.category || '').slice(0, 40)}`)
       .join('\n');
 
-    const prompt = `You are an expert personal fashion stylist. A user put together this outfit:
-Outfit name: "${outfitName || 'My Look'}"
-Pieces included:
-${itemsSummary}
-
-Provide EXACTLY a two-sentence stylish review of this look.
-Sentence 1: Compliment how these specific pieces, silhouettes, or colors coordinate with each other.
-Sentence 2: Offer a quick, flattering styling tip on where or how to wear this outfit best.
-Keep the tone encouraging, chic, and concise. Do NOT include bullet points, greetings, or more than two sentences.`;
-
-    // Exactly one Gemini call with no automatic retries
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    });
-
-    const reviewText = response && response.text ? response.text.trim() : '';
-    if (!reviewText) {
-      return res.status(503).json({
-        success: false,
-        error: "Our stylist is busy right now, but your outfit looks great! Tap to ask again.",
-      });
-    }
-
-    return res.json({
-      success: true,
-      review: reviewText,
-    });
+    const review = MOCK_GEMINI
+      ? 'These pieces share an easy, balanced palette that feels put together. (Test mode: this is a mock answer, not a real Gemini response.)'
+      : await askGemini({
+          contents:
+            `You are a friendly personal stylist. Review this outfit called "${String(req.body?.outfitName || 'My look').slice(0, 40)}":\n${summary}\n\n` +
+            'Write exactly two sentences: first, a compliment on how the pieces work together; second, a quick styling tip. No greetings or bullet points.',
+        });
+    res.json({ ok: true, source: source(), review: String(review).slice(0, 400) });
   } catch (err) {
-    console.error('Error in /api/review from Gemini:', err.message || err);
-    return res.status(503).json({
-      success: false,
-      error: "Our stylist is busy right now, but your outfit looks great! Tap to ask again.",
-    });
+    sendError(res, '/api/review', err);
   }
 });
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+// Always answer with JSON on errors. The browser falls back to basic rules.
+function sendError(res, route, err) {
+  console.error(`${route} failed:`, err?.message || err);
+  const status = err?.status === 429 ? 429 : 503;
+  res.status(status).json({ ok: false, error: status === 429 ? 'rate_limited' : 'unavailable', message: 'The stylist needs a short break.' });
+}
+
+// Unknown API routes and broken request bodies also get JSON
+app.use('/api', (req, res) => res.status(404).json({ ok: false, error: 'not_found' }));
+app.use((err, req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(err.status || 400).json({ ok: false, error: 'bad_request', message: 'Could not read that request.' });
+  }
+  next(err);
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
+// Anything else: send the app
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+app.listen(PORT, () => {
+  console.log(`Weari running on http://localhost:${PORT}`);
+  console.log(MOCK_GEMINI ? 'MOCK_GEMINI=true: using fake AI answers (no quota used)' : ai ? `Gemini model: ${GEMINI_MODEL}` : 'No GEMINI_API_KEY set: the app will use basic rules');
 });

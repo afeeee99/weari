@@ -3323,3 +3323,10 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 10px; padding: 0; }
 
 
 
+
+/* Where an outfit suggestion came from (Gemini, test mode or basic rules) */
+.style-source { font-size: 12px; font-weight: 600; color: var(--muted, #8a857f); margin: 0 0 10px; }
+.stylist-notice {
+  background: #fdf3dc; color: #7a5200; border-radius: 12px;
+  padding: 10px 14px; margin: 0 0 12px; font-size: 13px; line-height: 1.4;
+}

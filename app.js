@@ -1090,6 +1090,34 @@ function buildAddForm() {
 let activeTagController = null;
 let pendingSmallPhoto = null;
 
+// Talking to the Weari server (Gemini lives there, never in the browser)
+const STYLIST_BREAK_MSG = "The stylist needs a short break, so this is a basic suggestion.";
+
+async function callApi(path, body, { timeoutMs = 20000, signal } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (signal) signal.addEventListener("abort", () => controller.abort());
+  try {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const TAG_SOURCE_LABELS = {
+  gemini: "Tagged by Gemini",
+  mock: "Auto-tagged (test mode, not real Gemini)",
+  rules: "Auto-tagged (basic rules)",
+};
+
 async function autoTagPhoto(smallPhotoDataUrl) {
   if (activeTagController) {
     activeTagController.abort();
@@ -1113,46 +1141,43 @@ async function autoTagPhoto(smallPhotoDataUrl) {
     statusEl.innerHTML = `<span class="sparkle-icon">✨</span><span>Gemini is looking...</span>`;
   }
 
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, 15000);
-
+  let data;
   try {
-    // Auto-tag client side without Gemini calls
+    const res = await callApi("/api/tag", { image: smallPhotoDataUrl }, { timeoutMs: 15000, signal: controller.signal });
+    data = { source: res.source, data: res.tags };
+  } catch (err) {
+    if (activeTagController !== controller) return; // a newer photo replaced this one
+    console.warn("Gemini auto-tag unavailable, using basic rules:", err.message);
+    // Basic rules: keep what the user already picked, otherwise sensible defaults
     const autoCategory = form.category || "top";
     const autoColor = form.color || "black";
     const autoOccasions = form.occasions.size ? Array.from(form.occasions) : ["casual"];
-    const autoName = `${autoColor.charAt(0).toUpperCase() + autoColor.slice(1)} ${autoCategory}`;
-    const data = {
-      success: true,
-      source: "rules", // "gemini" only when the tags really came back from Gemini
+    data = {
+      source: "rules",
       data: {
-        name: autoName,
+        name: `${autoColor.charAt(0).toUpperCase() + autoColor.slice(1)} ${autoCategory}`,
         category: autoCategory,
         color: autoColor,
         occasions: autoOccasions,
-        confidence: 0.95,
       },
     };
+  }
 
-    const { name, category, color, occasions, confidence } = data.data;
+  try {
+    const { name, category, color, occasions } = data.data;
 
     if (statusEl) statusEl.hidden = true;
     if (btnAutotag) btnAutotag.hidden = true;
     if (badgeEl) {
-      const label = data.source === "gemini" ? "Tagged by Gemini" : "Auto-tagged (basic rules)";
+      const label = TAG_SOURCE_LABELS[data.source] || TAG_SOURCE_LABELS.rules;
       badgeEl.innerHTML = `<span class="sparkle-icon">✨</span><span class="tag-badge-text">${label}</span>`;
       badgeEl.hidden = false;
     }
 
-    // Confidence indicator: when low, show "Please double check these tags"
-    if (confidence === "low") {
-      if (hintEl) {
-        hintEl.textContent = "Please double check these tags";
-        hintEl.hidden = false;
-      }
-    } else {
-      if (hintEl) hintEl.hidden = true;
+    // If Gemini couldn't help, say so plainly
+    if (hintEl) {
+      hintEl.textContent = data.source === "rules" ? STYLIST_BREAK_MSG : "";
+      hintEl.hidden = data.source !== "rules";
     }
 
     // Fill only the fields the user hasn't already filled in
@@ -1187,11 +1212,7 @@ async function autoTagPhoto(smallPhotoDataUrl) {
       );
     }
   } catch (err) {
-    clearTimeout(timeoutId);
-    if (controller.signal.aborted && activeTagController !== controller) {
-      return;
-    }
-    console.error("Auto-tag failed or timed out:", err);
+    console.error("Auto-tag failed:", err);
     if (statusEl) statusEl.hidden = true;
     if (btnAutotag) {
       btnAutotag.disabled = false;
@@ -2057,6 +2078,52 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
+// The wardrobe as compact text for the server: "id | name | category | color | occasions" (no photos)
+const plainText = (v) => String(v ?? "").replace(/[|\r\n]/g, " ").replace(/\s+/g, " ").trim();
+function wardrobeAsText(items) {
+  return items
+    .map((it) =>
+      [it.id, plainText(it.name).slice(0, 40), it.category, it.color, (it.occasions || []).join(", ")]
+        .map(plainText)
+        .join(" | ")
+    )
+    .join("\n");
+}
+
+// Ask Gemini (via the server) for an outfit. On any problem, use the basic rules in stylist.js.
+async function getOutfitSuggestion(items) {
+  if (!items.length) return suggestOutfit(items, styleOccasion, lastOutfitIds, priorityStyleItemId);
+  try {
+    // getOnboardingPreferences() returns only goal, styles and occasions — no other personal answers
+    const res = await callApi(
+      "/api/style",
+      {
+        occasion: styleOccasion,
+        wardrobe: wardrobeAsText(items),
+        preferences: getOnboardingPreferences() || {},
+        previousOutfitIds: lastOutfitIds,
+        mustIncludeItemId: priorityStyleItemId,
+      },
+      { timeoutMs: 25000 }
+    );
+    if (!res.canFormOutfit) return { missing: res.missing, source: res.source };
+    const byId = new Map(items.map((it) => [String(it.id), it]));
+    const outfit = res.outfit.map((p) => ({ role: p.role, item: byId.get(String(p.itemId)) })).filter((p) => p.item);
+    if (!outfit.length) throw new Error("Suggested items are not in the wardrobe");
+    return { outfit, explanation: res.explanation, source: res.source };
+  } catch (err) {
+    console.warn("Gemini stylist unavailable, using basic rules:", err.message);
+    const basic = await suggestOutfit(items, styleOccasion, lastOutfitIds, priorityStyleItemId);
+    return { ...basic, source: "rules", notice: STYLIST_BREAK_MSG };
+  }
+}
+
+const STYLE_SOURCE_LABELS = {
+  gemini: "✨ Styled by Gemini",
+  mock: "✨ Test mode (not real Gemini)",
+  rules: "Basic suggestion",
+};
+
 let currentSuggestedOutfit = [];
 let priorityStyleItemId = null;
 
@@ -2090,12 +2157,13 @@ async function showSuggestion(forcedItemId = null) {
 
   try {
     const items = await getAllItems();
-    const result = await suggestOutfit(items, styleOccasion, lastOutfitIds, priorityStyleItemId);
+    const result = await getOutfitSuggestion(items);
 
     if (result.missing) {
       box.innerHTML = `
         <div class="notice">
           <div class="notice-icon">🧺</div>
+          ${result.notice ? `<p class="stylist-notice">${escapeHtml(result.notice)}</p>` : ""}
           <p>${escapeHtml(result.missing)}</p>
           <button class="btn-secondary" data-go="add">Add item</button>
         </div>`;
@@ -2109,6 +2177,8 @@ async function showSuggestion(forcedItemId = null) {
         <h3 class="outfit-title" style="margin:0;">Your ${styleOccasion} look</h3>
         <button id="btn-fav-suggested-header" type="button" class="fav-heart-btn" title="Favorite this look">♥</button>
       </div>
+      ${result.notice ? `<p class="stylist-notice">${escapeHtml(result.notice)}</p>` : ""}
+      <div class="style-source">${STYLE_SOURCE_LABELS[result.source] || STYLE_SOURCE_LABELS.rules}</div>
       <div class="grid outfit-grid">
         ${result.outfit
           .map(
