@@ -220,14 +220,47 @@
 
       <!-- Styling Mode Tabs -->
       <div class="segmented style-modes-tabs" id="style-mode-tabs">
-        <button type="button" class="seg active" data-style-mode="ai">✨ Stylist</button>
+        <button type="button" class="seg active" data-style-mode="chat">💬 Chat</button>
+        <button type="button" class="seg" data-style-mode="ai">✨ Stylist</button>
         <button type="button" class="seg" data-style-mode="manual">🎨 Create</button>
         <button type="button" class="seg" data-style-mode="favorites">❤️ Favorites</button>
         <button type="button" class="seg" data-style-mode="plan">📅 Plan</button>
       </div>
 
+      <!-- MODE 0: CHAT with the stylist (default) -->
+      <div id="style-mode-chat" class="chat-view">
+        <div id="chat-log" class="chat-log" aria-live="polite"></div>
+
+        <div class="chat-composer">
+        <div class="chat-chips" id="chat-chips">
+          <button type="button" class="chip" data-chat-chip="vibe">What’s the vibe today?</button>
+          <button type="button" class="chip" data-chat-chip="screenshot">Style me from this screenshot</button>
+          <button type="button" class="chip" data-chat-chip="buy">Should I buy this?</button>
+        </div>
+
+        <div id="chat-attachment" class="chat-attachment" hidden>
+          <img id="chat-attachment-img" alt="Attached photo" />
+          <button type="button" id="chat-attachment-remove" class="chat-attachment-remove" aria-label="Remove photo">×</button>
+        </div>
+
+        <form id="chat-form" class="chat-input-row" autocomplete="off">
+          <div class="chat-attach-wrap">
+            <button type="button" id="chat-attach-btn" class="chat-icon-btn" aria-label="Attach a photo" aria-expanded="false">📎</button>
+            <div id="chat-attach-menu" class="chat-attach-menu" hidden>
+              <button type="button" data-chat-attach="camera">📷 Take a photo</button>
+              <button type="button" data-chat-attach="upload">🖼️ Upload a photo</button>
+            </div>
+          </div>
+          <input type="file" id="chat-file-camera" accept="image/*" capture="environment" hidden />
+          <input type="file" id="chat-file-upload" accept="image/*" hidden />
+          <input type="text" id="chat-input" class="chat-input" placeholder="Ask your stylist…" maxlength="500" />
+          <button type="submit" id="chat-send" class="chat-send-btn" aria-label="Send">↑</button>
+        </form>
+        </div>
+      </div>
+
       <!-- MODE 1: AI STYLIST (Current Gemini flow) -->
-      <div id="style-mode-ai">
+      <div id="style-mode-ai" hidden>
         <fieldset>
           <legend>What’s the occasion?</legend>
           <div class="chips" id="style-occasions"></div>

@@ -894,6 +894,7 @@ function showScreen(name) {
     renderSavedOutfits();
     if (typeof renderFavorites === "function") renderFavorites();
     if (typeof renderWeeklyPlan === "function") renderWeeklyPlan();
+    if (currentStyleMode === "chat") renderChat();
   }
   if (name === "swap") renderSwap();
   if (name === "insights") renderInsights();
@@ -1611,7 +1612,7 @@ $("#btn-scan-another")?.addEventListener("click", () => {
 // =====================================================
 // Style me screen — Dual Modes: AI Stylist & Create your own
 // =====================================================
-let currentStyleMode = "ai";
+let currentStyleMode = "chat";
 let styleOccasion = null;
 let lastOutfitIds = [];
 
@@ -1662,6 +1663,11 @@ document.querySelectorAll("#style-mode-tabs [data-style-mode]").forEach((btn) =>
     document.querySelectorAll("#style-mode-tabs [data-style-mode]").forEach((b) =>
       b.classList.toggle("active", b === btn)
     );
+    const chatView = $("#style-mode-chat");
+    if (chatView) {
+      chatView.hidden = currentStyleMode !== "chat";
+      if (currentStyleMode === "chat") renderChat();
+    }
     const aiView = $("#style-mode-ai");
     const manualView = $("#style-mode-manual");
     const favView = $("#style-mode-favorites");
@@ -2313,6 +2319,188 @@ $("#style-result").addEventListener("click", async (e) => {
       unlockBadge("never_worn_rescuer");
     }
   }
+});
+
+// =====================================================
+// Style me — Chat with the stylist (talks to POST /api/chat)
+// =====================================================
+const CHAT_BREAK_MSG = "The stylist needs a short break, please try again soon.";
+const CHAT_CHIP_TEXT = {
+  vibe: "What’s the vibe today?",
+  screenshot: "Style me from this screenshot",
+  buy: "Should I buy this?",
+};
+const chatMessages = []; // { role: "user" | "stylist", text, image?, result?, error? } — kept in memory only
+let chatPendingImage = null; // 512px photo waiting to be sent
+let chatChipAwaitingPhoto = null; // chip text to send once a photo is picked
+let chatBusy = false;
+let chatItemsById = new Map(); // wardrobe lookup for outfit cards in replies
+
+// Wardrobe as compact text for the chat: "id | category | color | occasions | wears | days since worn"
+function wardrobeAsChatText(items) {
+  const now = Date.now();
+  return items
+    .map((it) => {
+      const days = it.lastWorn ? Math.max(0, Math.floor((now - new Date(it.lastWorn).getTime()) / 86400000)) : "-";
+      return [it.id, it.category, it.color, (it.occasions || []).join(", "), it.wearCount || 0, Number.isFinite(days) ? days : "-"]
+        .map(plainText)
+        .join(" | ");
+    })
+    .join("\n");
+}
+
+function chatBubbleHtml(msg, index) {
+  if (msg.role === "user") {
+    return `
+      <div class="chat-row user">
+        <div class="chat-bubble user">
+          ${msg.image ? `<img class="chat-bubble-img" src="${msg.image}" alt="Attached photo" />` : ""}
+          ${msg.text ? `<p>${escapeHtml(msg.text)}</p>` : ""}
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="chat-row stylist">
+      <div class="chat-avatar">✨</div>
+      <div class="chat-bubble stylist ${msg.error ? "error" : ""}">
+        <p>${escapeHtml(msg.text)}</p>
+        ${msg.result ? chatResultHtml(msg, index) : ""}
+      </div>
+    </div>`;
+}
+
+// Extra content under a stylist reply (outfit cards, swap offer, verdict) — filled in by renderChatResult
+function chatResultHtml(msg, index) {
+  return typeof renderChatResult === "function" ? renderChatResult(msg, index) : "";
+}
+
+async function renderChat() {
+  const log = $("#chat-log");
+  if (!log) return;
+  if (!chatMessages.length) {
+    log.innerHTML = `
+      <div class="chat-row stylist">
+        <div class="chat-avatar">✨</div>
+        <div class="chat-bubble stylist">
+          <p>Hi! I’m your Weari stylist. Ask me what to wear, send a screenshot of a look you love, or check something before you buy it.</p>
+        </div>
+      </div>`;
+  } else {
+    chatItemsById = new Map((await getAllItems()).map((it) => [String(it.id), it]));
+    log.innerHTML = chatMessages.map(chatBubbleHtml).join("");
+    log.lastElementChild?.classList.add("is-new"); // only the newest bubble animates in
+  }
+  if (chatBusy) {
+    log.insertAdjacentHTML(
+      "beforeend",
+      `<div class="chat-row stylist"><div class="chat-avatar">✨</div><div class="chat-bubble stylist typing"><span></span><span></span><span></span></div></div>`
+    );
+  }
+  const last = log.lastElementChild;
+  if (last && currentStyleMode === "chat") last.scrollIntoView({ block: "nearest" });
+}
+
+function setChatAttachment(dataUrl) {
+  chatPendingImage = dataUrl;
+  $("#chat-attachment").hidden = !dataUrl;
+  $("#chat-attachment-img").src = dataUrl || "";
+}
+
+async function sendChat(text) {
+  text = String(text || "").trim();
+  if (chatBusy || (!text && !chatPendingImage)) return;
+
+  const history = chatMessages.slice(-4).map((m) => ({ role: m.role, text: m.text }));
+  const image = chatPendingImage;
+  chatMessages.push({ role: "user", text, image });
+  setChatAttachment(null);
+  $("#chat-input").value = "";
+  chatBusy = true;
+  $("#chat-send").disabled = true;
+  renderChat();
+
+  try {
+    const items = await getAllItems();
+    const res = await callApi(
+      "/api/chat",
+      {
+        message: text,
+        history,
+        image: image || undefined,
+        wardrobe: wardrobeAsChatText(items),
+        // getOnboardingPreferences() returns only goal, styles and occasions — never age, budget or other answers
+        preferences: getOnboardingPreferences() || {},
+      },
+      { timeoutMs: 30000 }
+    );
+    chatMessages.push({ role: "stylist", text: res.reply, result: res });
+  } catch (err) {
+    console.warn("Chat stylist unavailable:", err.message);
+    chatMessages.push({ role: "stylist", text: CHAT_BREAK_MSG, error: true });
+  } finally {
+    chatBusy = false;
+    $("#chat-send").disabled = false;
+    renderChat();
+  }
+}
+
+$("#chat-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  chatChipAwaitingPhoto = null;
+  sendChat($("#chat-input").value);
+});
+
+// Attach: camera or upload (photos are shrunk to 512px before sending)
+function toggleChatAttachMenu(open) {
+  const menu = $("#chat-attach-menu");
+  menu.hidden = open === undefined ? !menu.hidden : !open;
+  $("#chat-attach-btn").setAttribute("aria-expanded", String(!menu.hidden));
+}
+$("#chat-attach-btn")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleChatAttachMenu();
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".chat-attach-wrap")) $("#chat-attach-menu") && toggleChatAttachMenu(false);
+});
+$("#chat-attach-menu")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-chat-attach]");
+  if (!btn) return;
+  toggleChatAttachMenu(false);
+  $(btn.dataset.chatAttach === "camera" ? "#chat-file-camera" : "#chat-file-upload").click();
+});
+["#chat-file-camera", "#chat-file-upload"].forEach((sel) => {
+  $(sel)?.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      setChatAttachment(await resizeImage(file, 512, 0.7));
+      if (chatChipAwaitingPhoto) {
+        const text = $("#chat-input").value || chatChipAwaitingPhoto;
+        chatChipAwaitingPhoto = null;
+        sendChat(text);
+      }
+    } catch {
+      toast("Couldn't read that photo");
+    }
+  });
+});
+$("#chat-attachment-remove")?.addEventListener("click", () => setChatAttachment(null));
+
+// Chips: the vibe question sends right away; the other two ask for a photo first
+$("#chat-chips")?.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-chat-chip]");
+  if (!chip) return;
+  const text = CHAT_CHIP_TEXT[chip.dataset.chatChip];
+  if (chip.dataset.chatChip === "vibe" || chatPendingImage) {
+    sendChat(text);
+    return;
+  }
+  // Ask for a photo; if they cancel, the text stays in the box so they can describe it instead
+  chatChipAwaitingPhoto = text;
+  $("#chat-input").value = text;
+  $("#chat-file-upload").click();
 });
 
 // =====================================================
