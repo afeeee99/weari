@@ -15,6 +15,7 @@ const KARMA_CONFIG = {
     SEND_SWAP_REQUEST: 20,
     WEAR_IDLE_ITEM: 25, // not worn in 30 days or never worn before
     REWEAR_OUTFIT: 10,  // re-wearing an outfit instead of buying new
+    SKIP_PURCHASE: 15,  // chose not to buy after a purchase check in Chat
   },
   LEVELS: [
     { name: "Closet Curious", minPoints: 0, icon: "🌱" },
@@ -2136,6 +2137,36 @@ const STYLE_SOURCE_LABELS = {
   rules: "Basic suggestion",
 };
 
+// "I wore this": +1 wear for each piece, then karma (shared by AI Stylist and Chat)
+async function logOutfitWorn(itemIds) {
+  const nowIso = new Date().toISOString();
+  const allItems = await getAllItems();
+  const map = new Map(allItems.map((it) => [String(it.id), it]));
+  let hadIdleItem = false;
+  let logged = 0;
+  for (const id of itemIds) {
+    const it = map.get(String(id));
+    if (it) {
+      if (!it.lastWorn || (Date.now() - new Date(it.lastWorn).getTime() > THIRTY_DAYS_MS)) {
+        hadIdleItem = true;
+      }
+      it.wearCount = (it.wearCount || 0) + 1;
+      it.lastWorn = nowIso;
+      await saveItem(it);
+      logged++;
+    }
+  }
+  toast(`Logged wear for all ${logged} pieces ✨`);
+  updateKarmaStreak();
+  recordPurchaseAvoided(1);
+  awardKarma(KARMA_CONFIG.POINTS.REWEAR_OUTFIT, "Re-wore outfit (+10)");
+  unlockBadge("rewear_rookie");
+  if (hadIdleItem) {
+    awardKarma(KARMA_CONFIG.POINTS.WEAR_IDLE_ITEM, "Rescued idle piece (+25)");
+    unlockBadge("never_worn_rescuer");
+  }
+}
+
 let currentSuggestedOutfit = [];
 let priorityStyleItemId = null;
 
@@ -2294,30 +2325,7 @@ $("#style-result").addEventListener("click", async (e) => {
   if (woreBtn && currentSuggestedOutfit && currentSuggestedOutfit.length) {
     woreBtn.disabled = true;
     woreBtn.textContent = "✓ Outfit logged!";
-    const nowIso = new Date().toISOString();
-    const allItems = await getAllItems();
-    const map = new Map(allItems.map((it) => [it.id, it]));
-    let hadIdleItem = false;
-    for (const piece of currentSuggestedOutfit) {
-      const it = map.get(piece.item.id);
-      if (it) {
-        if (!it.lastWorn || (Date.now() - new Date(it.lastWorn).getTime() > THIRTY_DAYS_MS)) {
-          hadIdleItem = true;
-        }
-        it.wearCount = (it.wearCount || 0) + 1;
-        it.lastWorn = nowIso;
-        await saveItem(it);
-      }
-    }
-    toast(`Logged wear for all ${currentSuggestedOutfit.length} pieces ✨`);
-    updateKarmaStreak();
-    recordPurchaseAvoided(1);
-    awardKarma(KARMA_CONFIG.POINTS.REWEAR_OUTFIT, "Re-wore outfit (+10)");
-    unlockBadge("rewear_rookie");
-    if (hadIdleItem) {
-      awardKarma(KARMA_CONFIG.POINTS.WEAR_IDLE_ITEM, "Rescued idle piece (+25)");
-      unlockBadge("never_worn_rescuer");
-    }
+    await logOutfitWorn(currentSuggestedOutfit.map((p) => p.item.id));
   }
 });
 
@@ -2501,6 +2509,98 @@ $("#chat-chips")?.addEventListener("click", (e) => {
   chatChipAwaitingPhoto = text;
   $("#chat-input").value = text;
   $("#chat-file-upload").click();
+});
+
+// ---------- What appears under a stylist reply ----------
+const VERDICT_LABELS = {
+  skip: { icon: "🙅", text: "Skip it — you already have this covered" },
+  swap_first: { icon: "🔁", text: "Swap first — try the Swap feed before buying" },
+  buy: { icon: "🛍️", text: "Worth buying — it fills a real gap" },
+};
+
+function renderChatResult(msg, index) {
+  const r = msg.result;
+  const pieces = (r.outfit_item_ids || []).map((id) => chatItemsById.get(String(id))).filter(Boolean);
+  const isOutfit = (r.kind === "outfit" || r.kind === "reference_match") && pieces.length;
+  let html = "";
+
+  if (pieces.length) {
+    html += `<div class="chat-cards">${pieces
+      .map(
+        (it) => `
+        <div class="chat-card">
+          <img src="${it.photo}" alt="${escapeHtml(describe(it))}" />
+          <span>${escapeHtml(it.name || describe(it))}</span>
+        </div>`
+      )
+      .join("")}</div>`;
+  }
+
+  if (isOutfit) {
+    html += `<div class="chat-actions">
+      <button type="button" class="chat-action" data-chat-fav="${index}">♥ Favorite</button>
+      <button type="button" class="chat-action" data-chat-wore="${index}" ${msg.wore ? "disabled" : ""}>${msg.wore ? "✓ Logged" : "✓ I wore this"}</button>
+    </div>`;
+  }
+
+  if (r.kind === "purchase_check" && VERDICT_LABELS[r.verdict]) {
+    const v = VERDICT_LABELS[r.verdict];
+    html += `<div class="chat-verdict ${r.verdict}"><span>${v.icon}</span><strong>${v.text}</strong></div>`;
+    if (r.verdict === "skip") {
+      html += `<div class="chat-actions">
+        <button type="button" class="chat-action primary" data-chat-skip="${index}" ${msg.skipped ? "disabled" : ""}>
+          ${msg.skipped ? `✓ Skipped (+${KARMA_CONFIG.POINTS.SKIP_PURCHASE} karma)` : "I’ll skip it"}
+        </button>
+      </div>`;
+    }
+  }
+
+  const offerSwap = (r.missing_pieces || []).length || (r.kind === "purchase_check" && r.verdict === "swap_first");
+  if ((r.missing_pieces || []).length) {
+    html += `<div class="chat-missing"><span>Missing:</span>${r.missing_pieces
+      .map((m) => `<span class="tag">${escapeHtml(m)}</span>`)
+      .join("")}</div>`;
+  }
+  if (offerSwap) {
+    html += `<div class="chat-actions"><button type="button" class="chat-action" data-go="swap">🔁 Find it on the Swap feed</button></div>`;
+  }
+  return html ? `<div class="chat-result">${html}</div>` : "";
+}
+
+$("#chat-log")?.addEventListener("click", async (e) => {
+  const fav = e.target.closest("[data-chat-fav]");
+  const wore = e.target.closest("[data-chat-wore]");
+  const skip = e.target.closest("[data-chat-skip]");
+  const btn = fav || wore || skip;
+  if (!btn) return;
+  const msg = chatMessages[Number(btn.dataset.chatFav ?? btn.dataset.chatWore ?? btn.dataset.chatSkip)];
+  if (!msg || !msg.result) return;
+  const ids = (msg.result.outfit_item_ids || []).filter((id) => chatItemsById.has(String(id)));
+
+  if (fav) {
+    const occasion = OCCASIONS.find((o) => (chatMessages[chatMessages.indexOf(msg) - 1]?.text || "").toLowerCase().includes(o)) || "casual";
+    promptFavoriteOutfit({
+      id: "outfit_chat_" + Date.now(),
+      name: "Chat look",
+      occasion,
+      createdAt: Date.now(),
+      items: ids.map((id) => chatItemsById.get(String(id))),
+    });
+  }
+
+  if (wore && !msg.wore) {
+    msg.wore = true;
+    await logOutfitWorn(ids);
+    renderChat();
+  }
+
+  if (skip && !msg.skipped) {
+    msg.skipped = true;
+    recordPurchaseAvoided(1);
+    awardKarma(KARMA_CONFIG.POINTS.SKIP_PURCHASE, `Skipped a purchase (+${KARMA_CONFIG.POINTS.SKIP_PURCHASE})`);
+    toast("Nice! That's one purchase avoided 🌱");
+    renderChat();
+  }
 });
 
 // =====================================================

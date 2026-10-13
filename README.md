@@ -53,6 +53,7 @@ answers, and the app labels them as test mode rather than Gemini.
 | `POST /api/tag` | one photo, resized to 512px | `name`, `category`, `color`, `occasions` (from the app's lists) |
 | `POST /api/style` | occasion, wardrobe as compact text (no photos), and only the onboarding goal, styles and occasions | outfit item ids from your wardrobe + a two-sentence explanation |
 | `POST /api/review` | category, color and name of each piece in a "Create your own" look | a two-sentence review (one call, no fallback model) |
+| `POST /api/chat` | your message, the last 4 messages, an optional photo (512px), wardrobe as compact text with wear counts, and only the onboarding goal, styles and occasions | `kind` (outfit, reference_match, purchase_check, chat), `reply` (max 3 sentences), `outfit_item_ids`, `missing_pieces`, `verdict` (skip, swap_first, buy) |
 
 - One Gemini call per request. The model is set in `GEMINI_MODEL` at the top of `server.js`.
   Only exception: if that model answers 503 (busy), the server waits 2 seconds and tries
@@ -63,6 +64,7 @@ answers, and the app labels them as test mode rather than Gemini.
 - On any error, including Gemini's 429 "too many requests", the app falls back to basic
   rules and shows: *"The stylist needs a short break, so this is a basic suggestion."*
 - The API always answers with JSON.
+- Chat purchase checks start from the rules in `buying-brain.js` (similar pieces you own and how often you wear them), then Gemini makes the final call.
 
 ## Data saved in the browser
 
