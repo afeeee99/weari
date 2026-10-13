@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
-import { buyingBrain } from './buying-brain.js';
+import { buyingBrain, buyingBrainRules, SHOP_VERDICTS, pairsWith } from './buying-brain.js';
 
 // =====================================================
 // Settings — change these in one place
@@ -377,20 +377,29 @@ const CHAT_SCHEMA = {
   required: ['kind', 'reply'],
 };
 
-// Wardrobe text for chat includes wear behaviour: wears and days since last worn ("-" = never)
-function parseChatWardrobe(text) {
+// Read compact wardrobe text ("a | b | c" per line) into items. Each endpoint names its own columns:
+//   chat:     id | category | color | occasions | wears | days since worn ("-" = never)
+//   buycheck: id | name | category | color | occasions | wears
+const CHAT_COLUMNS = ['id', 'category', 'color', 'occasions', 'wears', 'days'];
+const BUYCHECK_COLUMNS = ['id', 'name', 'category', 'color', 'occasions', 'wears'];
+
+function parseCompactWardrobe(text, columns) {
   return String(text || '')
     .split('\n')
     .slice(0, 300)
-    .map((line) => line.split('|').map((s) => s.trim()))
-    .filter((p) => p.length >= 6 && p[0] && CATEGORIES.includes(p[1]))
-    .map(([id, category, color, occasions, wears, days]) => ({
-      id: id.slice(0, 80),
-      category,
-      color: COLORS.includes(color) ? color : 'multi',
-      occasions: occasions.split(',').map((o) => o.trim()).filter((o) => OCCASIONS.includes(o)),
-      wears: Math.max(0, parseInt(wears, 10) || 0),
-      daysSinceWorn: /^\d+$/.test(days) ? parseInt(days, 10) : null,
+    .map((line) => {
+      const parts = line.split('|').map((s) => s.trim());
+      return parts.length >= columns.length ? Object.fromEntries(columns.map((c, i) => [c, parts[i]])) : null;
+    })
+    .filter((r) => r && r.id && CATEGORIES.includes(r.category))
+    .map((r) => ({
+      id: r.id.slice(0, 80),
+      ...(r.name !== undefined && { name: r.name.slice(0, 40) }),
+      category: r.category,
+      color: COLORS.includes(r.color) ? r.color : 'multi',
+      occasions: r.occasions.split(',').map((o) => o.trim()).filter((o) => OCCASIONS.includes(o)),
+      wears: Math.max(0, parseInt(r.wears, 10) || 0),
+      ...(r.days !== undefined && { daysSinceWorn: /^\d+$/.test(r.days) ? parseInt(r.days, 10) : null }),
     }));
 }
 
@@ -494,7 +503,7 @@ app.post('/api/chat', rateLimit, async (req, res) => {
     const imageMatch = String(req.body?.image || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
     if (!message && !imageMatch) return res.status(400).json({ ok: false, error: 'empty_message', message: 'Type a message or attach a photo.' });
 
-    const items = parseChatWardrobe(req.body?.wardrobe);
+    const items = parseCompactWardrobe(req.body?.wardrobe, CHAT_COLUMNS);
     const prefs = cleanPreferences(req.body?.preferences);
     const history = (Array.isArray(req.body?.history) ? req.body.history : [])
       .slice(-4)
@@ -523,8 +532,7 @@ app.post('/api/chat', rateLimit, async (req, res) => {
           '- "outfit": they want something to wear. Pick a complete outfit (one dress, or a top plus a bottom, plus shoes if owned) in outfit_item_ids. Favour pieces they rarely wear.\n' +
           '- "reference_match": they sent a look to recreate. Match it with their own pieces in outfit_item_ids and list what they lack in missing_pieces.\n' +
           '- "purchase_check": they are thinking of buying something. Set purchase_item to its category and color. ' +
-          'Buying Brain rules: if they own a similar piece (same category and color) the default verdict is "skip"; if they own 3 or more in that category, "swap_first"; ' +
-          'if it is a real gap in a category they wear often, "buy". Then use their wear behaviour above to make the final call as a thoughtful stylist, and name the owned pieces that make it unnecessary or that it would go with.\n' +
+          `${buyingBrainRules()}\n` +
           '- "chat": anything else.',
         'Rules: only use ids from the wardrobe list. "reply" is at most 3 short, warm sentences and names pieces they own by color and category (e.g. "your navy blazer"). Use verdict "none" unless kind is purchase_check.',
       ]
@@ -539,6 +547,140 @@ app.post('/api/chat', rateLimit, async (req, res) => {
     res.json({ ok: true, source: source(), ...cleanChat(raw, items) });
   } catch (err) {
     sendError(res, '/api/chat', err);
+  }
+});
+
+// =====================================================
+// POST /api/buycheck — Buying Brain shop scan
+//   body: {
+//     image: "data:image/jpeg;base64,..."   (one photo, resized to 512px by the browser)
+//     price: 49.99                           (optional)
+//     wardrobe: "id | name | category | color | occasions | wears" (one per line)
+//   }
+//   reply: { ok, source, verdict, reason, similar_item_ids, pairs_with_ids, item }
+//     verdict: "skip" | "real gap" | "try rewear first"
+//   Exactly one Gemini call, no retries and no fallback model.
+//   Reuses buying-brain.js (rules, verdict, pairing) — the same logic as Chat purchase checks.
+// =====================================================
+const SHOP_VERDICT_LIST = Object.values(SHOP_VERDICTS);
+
+const BUYCHECK_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    item: {
+      type: Type.OBJECT,
+      description: 'The item in the photo',
+      properties: {
+        name: { type: Type.STRING, description: 'Short name, e.g. "White linen shirt"' },
+        category: { type: Type.STRING, enum: CATEGORIES },
+        color: { type: Type.STRING, enum: COLORS },
+        occasions: { type: Type.ARRAY, items: { type: Type.STRING, enum: OCCASIONS } },
+      },
+      required: ['name', 'category', 'color'],
+    },
+    verdict: { type: Type.STRING, enum: SHOP_VERDICT_LIST },
+    reason: { type: Type.STRING, description: 'Exactly two sentences naming pieces they own by name' },
+    similar_item_ids: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Up to 3 owned pieces that are similar' },
+    pairs_with_ids: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Up to 3 owned pieces it would pair with' },
+  },
+  required: ['item', 'verdict', 'reason'],
+};
+
+// Rotating sample items so mock mode shows every verdict
+const MOCK_SHOP_ITEMS = [
+  { name: 'White linen shirt', category: 'top', color: 'white', occasions: ['casual', 'work'] },
+  { name: 'Black leather loafers', category: 'shoes', color: 'black', occasions: ['work', 'formal'] },
+  { name: 'Green satin slip dress', category: 'dress', color: 'green', occasions: ['party', 'wedding'] },
+  { name: 'Beige trench coat', category: 'outerwear', color: 'beige', occasions: ['work', 'travel'] },
+];
+let mockShopTurn = 0;
+
+const nameOf = (it) => it.name || `${it.color} ${it.category}`;
+const listNames = (items) => {
+  const names = items.map((it) => `your ${nameOf(it)}`);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join('');
+};
+
+function mockBuycheck(items) {
+  const item = MOCK_SHOP_ITEMS[mockShopTurn++ % MOCK_SHOP_ITEMS.length];
+  const brain = buyingBrain(item, items);
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const similar = brain.similarIds.slice(0, 3).map((id) => byId.get(id));
+  const pairs = pairsWith(item, items).map((id) => byId.get(id));
+  const second = similar.length
+    ? `Restyle ${listNames(similar)} instead.`
+    : pairs.length
+      ? `It would pair well with ${listNames(pairs)}.`
+      : 'Add a few pieces to your wardrobe so I can compare.';
+  return { item, verdict: SHOP_VERDICTS[brain.verdict], reason: `${brain.reason} ${second}`, similar_item_ids: similar.map((it) => it.id), pairs_with_ids: pairs.map((it) => it.id) };
+}
+
+// Keep only valid ids and verdicts; fill gaps from the Buying Brain
+function cleanBuycheck(raw, items) {
+  const validIds = new Set(items.map((it) => it.id));
+  const pickIds = (list) => [...new Set((list || []).map(String).filter((id) => validIds.has(id)))].slice(0, 3);
+  const item = {
+    name: String(raw?.item?.name || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+    category: CATEGORIES.includes(raw?.item?.category) ? raw.item.category : null,
+    color: COLORS.includes(raw?.item?.color) ? raw.item.color : null,
+    occasions: (raw?.item?.occasions || []).filter((o) => OCCASIONS.includes(o)),
+  };
+  const brain = item.category && item.color ? buyingBrain(item, items) : null;
+  const verdict = SHOP_VERDICT_LIST.includes(raw?.verdict) ? raw.verdict : brain ? SHOP_VERDICTS[brain.verdict] : null;
+  if (!verdict) throw new Error('Gemini returned no usable verdict');
+
+  let similar = pickIds(raw?.similar_item_ids);
+  if (!similar.length && brain) similar = brain.similarIds.slice(0, 3);
+  let pairs = pickIds(raw?.pairs_with_ids).filter((id) => !similar.includes(id));
+  if (!pairs.length && item.category) pairs = pairsWith(item, items).filter((id) => !similar.includes(id));
+
+  return {
+    verdict,
+    reason: firstSentences(String(raw?.reason || brain?.reason || '').slice(0, 600), 2),
+    similar_item_ids: similar,
+    pairs_with_ids: pairs.slice(0, 3),
+    item: { ...item, name: item.name || (item.color && item.category ? `${item.color} ${item.category}` : 'This item') },
+  };
+}
+
+app.post('/api/buycheck', rateLimit, async (req, res) => {
+  try {
+    const imageMatch = String(req.body?.image || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!imageMatch) return res.status(400).json({ ok: false, error: 'bad_image', message: 'Send one photo as a data URL.' });
+    const price = Number(req.body?.price);
+    const hasPrice = Number.isFinite(price) && price > 0 && price < 100000;
+    const items = parseCompactWardrobe(req.body?.wardrobe, BUYCHECK_COLUMNS);
+
+    let raw;
+    if (MOCK_GEMINI) {
+      raw = mockBuycheck(items);
+    } else {
+      raw = await askGemini({
+        allowFallback: false, // shop scan: exactly one call, no retries
+        schema: BUYCHECK_SCHEMA,
+        contents: [
+          { inlineData: { mimeType: imageMatch[1], data: imageMatch[2] } },
+          {
+            text: [
+              "You are Weari's Buying Brain: a stylist who helps people rewear and swap before buying new. The photo shows an item they are thinking of buying in a shop.",
+              `Their wardrobe (id | name | category | color | occasions | times worn):\n${
+                items.map((it) => `${it.id} | ${it.name} | ${it.category} | ${it.color} | ${it.occasions.join(', ')} | ${it.wears}`).join('\n') || '(empty)'
+              }`,
+              hasPrice ? `Price: ${price}` : '',
+              'Identify the item (name, category, color, likely occasions).',
+              buyingBrainRules(SHOP_VERDICTS),
+              'similar_item_ids: up to 3 owned pieces that are similar. pairs_with_ids: up to 3 owned pieces it would go with. Only use ids from the wardrobe list.',
+              '"reason" is exactly two short, warm sentences that name pieces they own by their names.',
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+          },
+        ],
+      });
+    }
+    res.json({ ok: true, source: source(), ...cleanBuycheck(raw, items) });
+  } catch (err) {
+    sendError(res, '/api/buycheck', err);
   }
 });
 
