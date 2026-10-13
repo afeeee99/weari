@@ -557,41 +557,39 @@ app.post('/api/chat', rateLimit, async (req, res) => {
 //     price: 49.99                           (optional)
 //     wardrobe: "id | name | category | color | occasions | wears" (one per line)
 //   }
-//   reply: { ok, source, verdict, reason, similar_item_ids, pairs_with_ids, item }
-//     verdict: "skip" | "real gap" | "try rewear first"
+//   reply: { ok, source, item_name, category, color, confidence, occasions,
+//            verdict, reason, similar_item_ids, pairs_with_ids }
+//     category: one of the app's categories or "unknown"; confidence: "high" | "medium" | "low"
+//     verdict: "skip" | "real gap" | "try rewear first", or null when category is "unknown"
+//              or confidence is "low" (the app then asks for a better photo)
 //   Exactly one Gemini call, no retries and no fallback model.
 //   Reuses buying-brain.js (rules, verdict, pairing) — the same logic as Chat purchase checks.
 // =====================================================
 const SHOP_VERDICT_LIST = Object.values(SHOP_VERDICTS);
+const CONFIDENCE_LEVELS = ['high', 'medium', 'low'];
 
 const BUYCHECK_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    item: {
-      type: Type.OBJECT,
-      description: 'The item in the photo',
-      properties: {
-        name: { type: Type.STRING, description: 'Short name, e.g. "White linen shirt"' },
-        category: { type: Type.STRING, enum: CATEGORIES },
-        color: { type: Type.STRING, enum: COLORS },
-        occasions: { type: Type.ARRAY, items: { type: Type.STRING, enum: OCCASIONS } },
-      },
-      required: ['name', 'category', 'color'],
-    },
+    item_name: { type: Type.STRING, description: 'Short name of the item in the photo, e.g. "White linen shirt"' },
+    category: { type: Type.STRING, enum: [...CATEGORIES, 'unknown'], description: '"unknown" if it is not clearly one clothing item' },
+    color: { type: Type.STRING, enum: [...COLORS, 'unknown'] },
+    confidence: { type: Type.STRING, enum: CONFIDENCE_LEVELS, description: 'How sure you are about the item, category and color' },
+    occasions: { type: Type.ARRAY, items: { type: Type.STRING, enum: OCCASIONS } },
     verdict: { type: Type.STRING, enum: SHOP_VERDICT_LIST },
     reason: { type: Type.STRING, description: 'Exactly two sentences naming pieces they own by name' },
     similar_item_ids: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Up to 3 owned pieces that are similar' },
     pairs_with_ids: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Up to 3 owned pieces it would pair with' },
   },
-  required: ['item', 'verdict', 'reason'],
+  required: ['item_name', 'category', 'color', 'confidence'],
 };
 
 // Rotating sample items so mock mode shows every verdict
 const MOCK_SHOP_ITEMS = [
-  { name: 'White linen shirt', category: 'top', color: 'white', occasions: ['casual', 'work'] },
-  { name: 'Black leather loafers', category: 'shoes', color: 'black', occasions: ['work', 'formal'] },
-  { name: 'Green satin slip dress', category: 'dress', color: 'green', occasions: ['party', 'wedding'] },
-  { name: 'Beige trench coat', category: 'outerwear', color: 'beige', occasions: ['work', 'travel'] },
+  { item_name: 'White linen shirt', category: 'top', color: 'white', confidence: 'high', occasions: ['casual', 'work'] },
+  { item_name: 'Black leather loafers', category: 'shoes', color: 'black', confidence: 'high', occasions: ['work', 'formal'] },
+  { item_name: 'Green satin slip dress', category: 'dress', color: 'green', confidence: 'high', occasions: ['party', 'wedding'] },
+  { item_name: 'Beige trench coat', category: 'outerwear', color: 'beige', confidence: 'medium', occasions: ['work', 'travel'] },
 ];
 let mockShopTurn = 0;
 
@@ -612,34 +610,41 @@ function mockBuycheck(items) {
     : pairs.length
       ? `It would pair well with ${listNames(pairs)}.`
       : 'Add a few pieces to your wardrobe so I can compare.';
-  return { item, verdict: SHOP_VERDICTS[brain.verdict], reason: `${brain.reason} ${second}`, similar_item_ids: similar.map((it) => it.id), pairs_with_ids: pairs.map((it) => it.id) };
+  return { ...item, verdict: SHOP_VERDICTS[brain.verdict], reason: `${brain.reason} ${second}`, similar_item_ids: similar.map((it) => it.id), pairs_with_ids: pairs.map((it) => it.id) };
 }
 
-// Keep only valid ids and verdicts; fill gaps from the Buying Brain
+// Keep only valid ids, labels and verdicts; fill gaps from the Buying Brain.
+// No verdict when the item is unknown or Gemini isn't confident — the app asks for a better photo.
 function cleanBuycheck(raw, items) {
   const validIds = new Set(items.map((it) => it.id));
   const pickIds = (list) => [...new Set((list || []).map(String).filter((id) => validIds.has(id)))].slice(0, 3);
-  const item = {
-    name: String(raw?.item?.name || '').replace(/\s+/g, ' ').trim().slice(0, 40),
-    category: CATEGORIES.includes(raw?.item?.category) ? raw.item.category : null,
-    color: COLORS.includes(raw?.item?.color) ? raw.item.color : null,
-    occasions: (raw?.item?.occasions || []).filter((o) => OCCASIONS.includes(o)),
-  };
-  const brain = item.category && item.color ? buyingBrain(item, items) : null;
-  const verdict = SHOP_VERDICT_LIST.includes(raw?.verdict) ? raw.verdict : brain ? SHOP_VERDICTS[brain.verdict] : null;
-  if (!verdict) throw new Error('Gemini returned no usable verdict');
+  const category = CATEGORIES.includes(raw?.category) ? raw.category : 'unknown';
+  const color = COLORS.includes(raw?.color) ? raw.color : 'unknown';
+  const confidence = CONFIDENCE_LEVELS.includes(raw?.confidence) ? raw.confidence : 'low';
+  const occasions = (raw?.occasions || []).filter((o) => OCCASIONS.includes(o));
+  const itemName =
+    String(raw?.item_name || '').replace(/\s+/g, ' ').trim().slice(0, 40) || (category !== 'unknown' ? `${color === 'unknown' ? '' : `${color} `}${category}` : 'Unknown item');
+  const detected = { item_name: itemName, category, color, confidence, occasions };
+
+  if (category === 'unknown' || confidence === 'low') {
+    return { ...detected, verdict: null, reason: '', similar_item_ids: [], pairs_with_ids: [] };
+  }
+
+  const item = { category, color, occasions };
+  const brain = buyingBrain(item, items);
+  const verdict = SHOP_VERDICT_LIST.includes(raw?.verdict) ? raw.verdict : SHOP_VERDICTS[brain.verdict];
 
   let similar = pickIds(raw?.similar_item_ids);
-  if (!similar.length && brain) similar = brain.similarIds.slice(0, 3);
+  if (!similar.length) similar = brain.similarIds.slice(0, 3);
   let pairs = pickIds(raw?.pairs_with_ids).filter((id) => !similar.includes(id));
-  if (!pairs.length && item.category) pairs = pairsWith(item, items).filter((id) => !similar.includes(id));
+  if (!pairs.length) pairs = pairsWith(item, items).filter((id) => !similar.includes(id));
 
   return {
+    ...detected,
     verdict,
-    reason: firstSentences(String(raw?.reason || brain?.reason || '').slice(0, 600), 2),
+    reason: firstSentences(String(raw?.reason || brain.reason).slice(0, 600), 2),
     similar_item_ids: similar,
     pairs_with_ids: pairs.slice(0, 3),
-    item: { ...item, name: item.name || (item.color && item.category ? `${item.color} ${item.category}` : 'This item') },
   };
 }
 
@@ -667,7 +672,8 @@ app.post('/api/buycheck', rateLimit, async (req, res) => {
                 items.map((it) => `${it.id} | ${it.name} | ${it.category} | ${it.color} | ${it.occasions.join(', ')} | ${it.wears}`).join('\n') || '(empty)'
               }`,
               hasPrice ? `Price: ${price}` : '',
-              'Identify the item (name, category, color, likely occasions).',
+              'Identify the item: item_name, category, color and likely occasions, plus your confidence ("high", "medium" or "low"). ' +
+                'If the photo does not clearly show one clothing item, set category to "unknown" and skip the verdict.',
               buyingBrainRules(SHOP_VERDICTS),
               'similar_item_ids: up to 3 owned pieces that are similar. pairs_with_ids: up to 3 owned pieces it would go with. Only use ids from the wardrobe list.',
               '"reason" is exactly two short, warm sentences that name pieces they own by their names.',

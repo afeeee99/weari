@@ -2747,12 +2747,12 @@ function renderBuyCheckResult() {
   const { photo, price, result: r, skipped, saved } = currentBuyCheck;
   const v = BUYCHECK_VERDICTS[r.verdict] || BUYCHECK_VERDICTS["try rewear first"];
   openBuyCheckView(`
-    <img class="buycheck-photo" src="${photo}" alt="${escapeHtml(r.item?.name || "Item you're thinking of buying")}" />
+    <img class="buycheck-photo" src="${photo}" alt="${escapeHtml(r.item_name || "Item you're thinking of buying")}" />
     <div class="buycheck-head">
       <span class="buycheck-badge ${v.css}">${v.icon} ${v.label}</span>
       ${r.source === "mock" ? `<span class="buycheck-test">Test mode, not real Gemini</span>` : ""}
     </div>
-    ${r.item?.name ? `<h2 class="buycheck-item-name">${escapeHtml(r.item.name)}</h2>` : ""}
+    ${r.item_name ? `<h2 class="buycheck-item-name">${escapeHtml(r.item_name)}</h2>` : ""}
     <p class="buycheck-reason">${escapeHtml(r.reason)}</p>
     ${
       price
@@ -2788,7 +2788,15 @@ $("#buycheck-view")?.addEventListener("click", (e) => {
   if (action === "save" && !currentBuyCheck.saved) {
     const { photo, price, result: r } = currentBuyCheck;
     const ok = saveSavedForLater([
-      { id: "later_" + Date.now(), photo, price, verdict: r.verdict, reason: r.reason, item: r.item, createdAt: Date.now() },
+      {
+        id: "later_" + Date.now(),
+        photo,
+        price,
+        verdict: r.verdict,
+        reason: r.reason,
+        item: { name: r.item_name, category: r.category, color: r.color },
+        createdAt: Date.now(),
+      },
       ...getSavedForLater(),
     ]);
     if (ok) {
