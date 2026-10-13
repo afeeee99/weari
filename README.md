@@ -54,6 +54,7 @@ answers, and the app labels them as test mode rather than Gemini.
 | `POST /api/style` | occasion, wardrobe as compact text (no photos), and only the onboarding goal, styles and occasions | outfit item ids from your wardrobe + a two-sentence explanation |
 | `POST /api/review` | category, color and name of each piece in a "Create your own" look | a two-sentence review (one call, no fallback model) |
 | `POST /api/chat` | your message, the last 4 messages, an optional photo (512px), wardrobe as compact text with wear counts, and only the onboarding goal, styles and occasions | `kind` (outfit, reference_match, purchase_check, chat), `reply` (max 3 sentences), `outfit_item_ids`, `missing_pieces`, `verdict` (skip, swap_first, buy) |
+| `POST /api/buycheck` | one photo (512px), an optional price, and wardrobe as compact text with names and wear counts | `verdict` (skip, real gap, try rewear first), two-sentence `reason`, up to 3 `similar_item_ids` and `pairs_with_ids` |
 
 - One Gemini call per request. The model is set in `GEMINI_MODEL` at the top of `server.js`.
   Only exception: if that model answers 503 (busy), the server waits 2 seconds and tries
@@ -64,7 +65,7 @@ answers, and the app labels them as test mode rather than Gemini.
 - On any error, including Gemini's 429 "too many requests", the app falls back to basic
   rules and shows: *"The stylist needs a short break, so this is a basic suggestion."*
 - The API always answers with JSON.
-- Chat purchase checks start from the rules in `buying-brain.js` (similar pieces you own and how often you wear them), then Gemini makes the final call.
+- Chat purchase checks and the Buying Brain shop scan (Wardrobe → Buying Brain) share the rules in `buying-brain.js` (similar pieces you own and how often you wear them), then Gemini makes the final call.
 
 ## Data saved in the browser
 
@@ -74,7 +75,8 @@ answers, and the app labels them as test mode rather than Gemini.
   `weari-swap-requests`, `weari_saved_outfits`, `weari_favorite_outfits`,
   `weari_weekly_plan`, `weari_plan_repeat_weekly`, `weari_onboarding_completed`,
   `weari_onboarding_answers`, `weari_user_profile`, `weari_profile_dismissed`,
-  `weari_profile_first_name`, `weari_profile_email`, `weari_plus_waitlist`
+  `weari_profile_first_name`, `weari_profile_email`, `weari_plus_waitlist`,
+  `weari_saved_for_later`, `weari_considered_not_bought`
 
 **Settings → Reset app** clears all of these (in both dash and underscore spellings)
 after a confirmation.

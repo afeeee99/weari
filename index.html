@@ -29,6 +29,13 @@
   <main>
     <!-- ============ WARDROBE SCREEN ============ -->
     <section id="screen-wardrobe" class="screen">
+      <button type="button" id="btn-buying-brain" class="buying-brain-cta">
+        <span class="bb-icon">🧠</span>
+        <span class="bb-text"><strong>Buying Brain</strong><small>Thinking of buying something? Scan it first.</small></span>
+        <span class="bb-arrow">📷</span>
+      </button>
+      <div id="saved-for-later" class="saved-later" hidden></div>
+
       <div class="filters" id="filters"></div>
 
       <!-- Quick-Add banner shown after saving an item with Scan another button -->
@@ -454,6 +461,12 @@
         </p>
       </div>
 
+      <!-- Buying Brain counts -->
+      <div class="bb-stats">
+        <div class="bb-stat"><strong id="stat-purchases-avoided">0</strong><span>Purchases avoided</span></div>
+        <div class="bb-stat"><strong id="stat-considered">0</strong><span>Considered, not bought</span></div>
+      </div>
+
       <!-- Wardrobe usage (30 days) -->
       <div class="usage-card">
         <div class="card-heading-group">
@@ -778,10 +791,15 @@
 
     <div class="camera-guide-container" id="camera-guide">
       <div class="camera-guide-box"></div>
-      <p class="camera-guide-text">Place one item in the frame</p>
+      <p class="camera-guide-text" id="camera-guide-text">Place one item in the frame</p>
     </div>
 
     <div class="camera-bottom-bar">
+      <!-- Buying Brain only: optional price -->
+      <label id="camera-price-wrap" class="camera-price" hidden>
+        <span>Price (optional)</span>
+        <input type="number" id="camera-price" inputmode="decimal" min="0" step="0.01" placeholder="e.g. 49.99" />
+      </label>
       <!-- Live capture mode controls -->
       <div id="camera-capture-controls" class="camera-capture-controls">
         <label class="camera-file-fallback-btn" title="Upload from files instead">

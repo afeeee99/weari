@@ -888,7 +888,10 @@ function showScreen(name) {
   document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== `screen-${name}`));
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.go === name));
   window.scrollTo(0, 0);
-  if (name === "wardrobe") renderWardrobe();
+  if (name === "wardrobe") {
+    renderWardrobe();
+    renderSavedForLater();
+  }
   if (name === "style") {
     renderStyleOccasions();
     renderManualOutfit();
@@ -1371,10 +1374,22 @@ function captureAndResizeCameraFrame(video, maxSize = 512, quality = 0.82) {
   return canvas.toDataURL("image/jpeg", quality);
 }
 
-async function startCameraScan() {
+// The same full-screen camera serves Add item ("add") and Buying Brain ("buycheck")
+let cameraPurpose = "add";
+let cameraFlipping = false;
+
+async function startCameraScan(purpose = "add") {
   const modal = $("#camera-modal");
   const video = $("#camera-video");
   const fallbackInput = $("#camera-fallback-file");
+
+  // A fresh scan starts with an empty price (flipping the camera keeps it)
+  if (!cameraFlipping && $("#camera-price")) $("#camera-price").value = "";
+  cameraFlipping = false;
+  cameraPurpose = purpose;
+  const isBuyCheck = purpose === "buycheck";
+  $("#camera-guide-text").textContent = isBuyCheck ? "Point at an item you’re thinking of buying" : "Place one item in the frame";
+  $("#camera-price-wrap").hidden = !isBuyCheck;
 
   resetCameraReviewUI();
 
@@ -1484,20 +1499,26 @@ $("#camera-retake")?.addEventListener("click", () => {
 $("#camera-use-photo")?.addEventListener("click", () => {
   if (!capturedPhoto512) return;
   const photoToUse = capturedPhoto512;
+  const price = $("#camera-price")?.value;
   stopCameraScan();
-  handlePhotoSelected(photoToUse);
+  if (cameraPurpose === "buycheck") runBuyCheck(photoToUse, price);
+  else handlePhotoSelected(photoToUse);
 });
 
 $("#camera-flip")?.addEventListener("click", () => {
   currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
-  startCameraScan();
+  cameraFlipping = true;
+  startCameraScan(cameraPurpose);
 });
 
-$("#camera-fallback-file")?.addEventListener("change", (e) => {
+$("#camera-fallback-file")?.addEventListener("change", async (e) => {
   const file = e.target.files[0];
+  e.target.value = "";
   if (!file) return;
+  const price = $("#camera-price")?.value;
   stopCameraScan();
-  handlePhotoSelected(file);
+  if (cameraPurpose === "buycheck") runBuyCheck(await resizeImage(file, 512, 0.82), price);
+  else handlePhotoSelected(file);
 });
 
 $("#btn-camera-scan")?.addEventListener("click", () => {
@@ -2785,6 +2806,39 @@ $("#buycheck-view")?.addEventListener("click", (e) => {
   }
 });
 
+$("#btn-buying-brain")?.addEventListener("click", () => startCameraScan("buycheck"));
+
+function renderSavedForLater() {
+  const box = $("#saved-for-later");
+  if (!box) return;
+  const list = getSavedForLater();
+  box.hidden = !list.length;
+  if (!list.length) return;
+  box.innerHTML = `
+    <div class="saved-later-head"><h3>Saved for later</h3><span>${list.length}</span></div>
+    <div class="saved-later-row">${list
+      .map((x) => {
+        const v = BUYCHECK_VERDICTS[x.verdict] || BUYCHECK_VERDICTS["try rewear first"];
+        return `
+        <div class="saved-later-card">
+          <button type="button" class="saved-later-remove" data-later-remove="${x.id}" aria-label="Remove">×</button>
+          <img src="${x.photo}" alt="${escapeHtml(x.item?.name || "Saved item")}" />
+          <div class="saved-later-body">
+            <span class="saved-later-name">${escapeHtml(x.item?.name || "Saved item")}</span>
+            <span class="saved-later-meta"><span class="buycheck-badge ${v.css} mini">${v.icon} ${v.label}</span>${x.price ? ` · ${formatMoney(x.price)}` : ""}</span>
+          </div>
+        </div>`;
+      })
+      .join("")}</div>`;
+}
+
+$("#saved-for-later")?.addEventListener("click", (e) => {
+  const id = e.target.closest("[data-later-remove]")?.dataset.laterRemove;
+  if (!id) return;
+  saveSavedForLater(getSavedForLater().filter((x) => x.id !== id));
+  renderSavedForLater();
+});
+
 // =====================================================
 // Swap screen (Rewear)
 // (sample listings live in swap-data.js)
@@ -3138,6 +3192,11 @@ async function renderInsights() {
   const completedSwaps = getCompletedSwapsCount();
   const purchasesAvoided = getPurchasesAvoidedCount();
   const impact = IMPACT_CONFIG.calculate(completedSwaps, purchasesAvoided);
+
+  const avoidedEl = $("#stat-purchases-avoided");
+  if (avoidedEl) avoidedEl.textContent = purchasesAvoided;
+  const consideredEl = $("#stat-considered");
+  if (consideredEl) consideredEl.textContent = getConsideredNotBoughtCount();
 
   const countsEl = $("#impact-counts");
   if (countsEl) countsEl.textContent = `Estimated · ${completedSwaps} completed swap${completedSwaps === 1 ? "" : "s"} · ${purchasesAvoided} purchase${purchasesAvoided === 1 ? "" : "s"} avoided`;
