@@ -15,6 +15,11 @@ const IDLE_DAYS = 30;
 const RARELY_WORN = 3; // fewer wears than this = rarely worn
 
 const plural = (category) => ({ shoes: 'shoes', accessory: 'accessories', dress: 'dresses', outerwear: 'outerwear pieces' })[category] || `${category}s`;
+// "a white top" / "a pair of black shoes" / "2 white tops"
+const piecePhrase = (color, category, count) =>
+  count === 1
+    ? category === 'shoes' ? `a similar pair of ${color} shoes` : `a similar ${color} ${category === 'outerwear' ? 'outerwear piece' : category}`
+    : `${count} similar ${color} ${plural(category)}`;
 
 export function buyingBrain(candidate, wardrobe) {
   const sameCategory = wardrobe.filter((it) => it.category === candidate.category);
@@ -29,9 +34,12 @@ export function buyingBrain(candidate, wardrobe) {
   if (similar.length) {
     const idle = similar.filter(isIdle);
     verdict = 'skip';
-    reason = idle.length
-      ? `You own ${similar.length} similar ${candidate.color} ${similar.length > 1 ? plural(candidate.category) : candidate.category}, and ${idle.length} of them rarely get worn.`
-      : `You already own a ${candidate.color} ${candidate.category} you wear often.`;
+    const owned = piecePhrase(candidate.color, candidate.category, similar.length);
+    reason = !idle.length
+      ? `You already own ${owned} you wear often.`
+      : similar.length === 1
+        ? `You already own ${owned}, but it rarely gets worn.`
+        : `You own ${owned}, and ${idle.length === similar.length ? 'they all rarely get' : `${idle.length} of them rarely ${idle.length === 1 ? 'gets' : 'get'}`} worn.`;
   } else if (sameCategory.length >= 3) {
     verdict = 'swap_first';
     reason = `You have ${sameCategory.length} ${plural(candidate.category)} already (worn ${avgWears.toFixed(1)} times on average), so try a swap before buying.`;

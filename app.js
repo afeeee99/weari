@@ -2511,6 +2511,13 @@ $("#chat-chips")?.addEventListener("click", (e) => {
   $("#chat-file-upload").click();
 });
 
+// "I'll skip it" after a purchase check (Chat and Buying Brain): karma + a purchase avoided
+function skipPurchase() {
+  recordPurchaseAvoided(1);
+  awardKarma(KARMA_CONFIG.POINTS.SKIP_PURCHASE, `Skipped a purchase (+${KARMA_CONFIG.POINTS.SKIP_PURCHASE})`);
+  toast("Nice! That's one purchase avoided 🌱");
+}
+
 // ---------- What appears under a stylist reply ----------
 const VERDICT_LABELS = {
   skip: { icon: "🙅", text: "Skip it — you already have this covered" },
@@ -2596,10 +2603,185 @@ $("#chat-log")?.addEventListener("click", async (e) => {
 
   if (skip && !msg.skipped) {
     msg.skipped = true;
-    recordPurchaseAvoided(1);
-    awardKarma(KARMA_CONFIG.POINTS.SKIP_PURCHASE, `Skipped a purchase (+${KARMA_CONFIG.POINTS.SKIP_PURCHASE})`);
-    toast("Nice! That's one purchase avoided 🌱");
+    skipPurchase();
     renderChat();
+  }
+});
+
+// =====================================================
+// Buying Brain — shop scan (talks to POST /api/buycheck)
+// =====================================================
+const SAVED_FOR_LATER_KEY = "weari_saved_for_later";
+const CONSIDERED_NOT_BOUGHT_KEY = "weari_considered_not_bought";
+const BUYCHECK_BREAK_MSG = "The stylist needs a short break, please try again soon.";
+const BUYCHECK_VERDICTS = {
+  skip: { icon: "🙅", label: "Skip it", css: "skip" },
+  "real gap": { icon: "🛍️", label: "Real gap", css: "buy" },
+  "try rewear first": { icon: "🔁", label: "Try rewear first", css: "swap_first" },
+};
+let currentBuyCheck = null; // { photo, price, result, skipped, saved, counted }
+
+function getSavedForLater() {
+  try {
+    const list = JSON.parse(localStorage.getItem(SAVED_FOR_LATER_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+function saveSavedForLater(list) {
+  try {
+    localStorage.setItem(SAVED_FOR_LATER_KEY, JSON.stringify(list.slice(0, 20)));
+    return true;
+  } catch {
+    toast("Couldn't save — browser storage is full");
+    return false;
+  }
+}
+function getConsideredNotBoughtCount() {
+  try {
+    return Number(localStorage.getItem(CONSIDERED_NOT_BOUGHT_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+// Counted once per scan, when it ends in "I'll skip it" or "Save for later"
+function recordConsideredNotBought() {
+  if (!currentBuyCheck || currentBuyCheck.counted) return;
+  currentBuyCheck.counted = true;
+  try {
+    localStorage.setItem(CONSIDERED_NOT_BOUGHT_KEY, String(getConsideredNotBoughtCount() + 1));
+  } catch {}
+}
+
+// Wardrobe as compact text for the shop scan: "id | name | category | color | occasions | wears"
+function wardrobeAsBuycheckText(items) {
+  return items
+    .map((it) =>
+      [it.id, plainText(it.name || describe(it)).slice(0, 40), it.category, it.color, (it.occasions || []).join(", "), it.wearCount || 0]
+        .map(plainText)
+        .join(" | ")
+    )
+    .join("\n");
+}
+
+const formatMoney = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function openBuyCheckView(html) {
+  $("#buycheck-content").innerHTML = html;
+  $("#buycheck-view").hidden = false;
+  $("#buycheck-view").scrollTop = 0;
+  document.body.classList.add("no-scroll");
+}
+function closeBuyCheckView() {
+  $("#buycheck-view").hidden = true;
+  document.body.classList.remove("no-scroll");
+}
+$("#buycheck-close")?.addEventListener("click", closeBuyCheckView);
+
+async function runBuyCheck(photo, price) {
+  photo = await resizeDataUrl(photo, 512, 0.82); // always send at most 512px
+  const priceNum = Number(price);
+  currentBuyCheck = { photo, price: Number.isFinite(priceNum) && priceNum > 0 ? priceNum : null, result: null };
+  openBuyCheckView(`
+    <img class="buycheck-photo" src="${photo}" alt="Item you're thinking of buying" />
+    <div class="buycheck-thinking"><span class="sparkle-icon">✨</span> Buying Brain is checking your wardrobe…</div>`);
+  try {
+    const items = await getAllItems();
+    const res = await callApi(
+      "/api/buycheck",
+      { image: photo, price: currentBuyCheck.price || undefined, wardrobe: wardrobeAsBuycheckText(items) },
+      { timeoutMs: 30000 }
+    );
+    currentBuyCheck.result = res;
+    chatItemsById = new Map(items.map((it) => [String(it.id), it]));
+    renderBuyCheckResult();
+  } catch (err) {
+    console.warn("Buying Brain unavailable:", err.message);
+    openBuyCheckView(`
+      <img class="buycheck-photo" src="${photo}" alt="Item you're thinking of buying" />
+      <div class="notice"><div class="notice-icon">☕</div><p>${BUYCHECK_BREAK_MSG}</p>
+        <button type="button" class="btn-secondary" data-buycheck="retry">Try again</button></div>`);
+  }
+}
+
+function buyCheckRow(title, ids) {
+  const pieces = ids.map((id) => chatItemsById.get(String(id))).filter(Boolean);
+  if (!pieces.length) return "";
+  return `
+    <h3 class="buycheck-row-title">${title}</h3>
+    <div class="buycheck-row">${pieces
+      .map(
+        (it) => `
+        <div class="chat-card">
+          <img src="${it.photo}" alt="${escapeHtml(describe(it))}" />
+          <span>${escapeHtml(it.name || describe(it))}</span>
+          <small>Worn ${it.wearCount || 0}×</small>
+        </div>`
+      )
+      .join("")}</div>`;
+}
+
+function renderBuyCheckResult() {
+  const { photo, price, result: r, skipped, saved } = currentBuyCheck;
+  const v = BUYCHECK_VERDICTS[r.verdict] || BUYCHECK_VERDICTS["try rewear first"];
+  openBuyCheckView(`
+    <img class="buycheck-photo" src="${photo}" alt="${escapeHtml(r.item?.name || "Item you're thinking of buying")}" />
+    <div class="buycheck-head">
+      <span class="buycheck-badge ${v.css}">${v.icon} ${v.label}</span>
+      ${r.source === "mock" ? `<span class="buycheck-test">Test mode, not real Gemini</span>` : ""}
+    </div>
+    ${r.item?.name ? `<h2 class="buycheck-item-name">${escapeHtml(r.item.name)}</h2>` : ""}
+    <p class="buycheck-reason">${escapeHtml(r.reason)}</p>
+    ${
+      price
+        ? `<div class="buycheck-cpw"><strong>${formatMoney(price / 10)}</strong> per wear if worn 10 times <span>(price ${formatMoney(price)})</span></div>`
+        : ""
+    }
+    ${buyCheckRow("You already own", r.similar_item_ids || [])}
+    ${buyCheckRow("Would pair with", r.pairs_with_ids || [])}
+    <div class="buycheck-actions">
+      <button type="button" class="btn-primary btn-block buycheck-skip" data-buycheck="skip" ${skipped ? "disabled" : ""}>
+        ${skipped ? `✓ Skipped (+${KARMA_CONFIG.POINTS.SKIP_PURCHASE} karma)` : "I’ll skip it"}
+      </button>
+      <button type="button" class="btn-secondary btn-block" data-buycheck="save" ${saved ? "disabled" : ""}>
+        ${saved ? "✓ Saved for later" : "🔖 Save for later"}
+      </button>
+      ${r.verdict === "try rewear first" ? `<button type="button" class="btn-secondary btn-block" data-buycheck="swap">🔁 See Swap feed</button>` : ""}
+    </div>`);
+}
+
+$("#buycheck-view")?.addEventListener("click", (e) => {
+  const action = e.target.closest("[data-buycheck]")?.dataset.buycheck;
+  if (!action || !currentBuyCheck) return;
+
+  if (action === "retry") runBuyCheck(currentBuyCheck.photo, currentBuyCheck.price);
+
+  if (action === "skip" && !currentBuyCheck.skipped) {
+    currentBuyCheck.skipped = true;
+    recordConsideredNotBought();
+    skipPurchase();
+    renderBuyCheckResult();
+  }
+
+  if (action === "save" && !currentBuyCheck.saved) {
+    const { photo, price, result: r } = currentBuyCheck;
+    const ok = saveSavedForLater([
+      { id: "later_" + Date.now(), photo, price, verdict: r.verdict, reason: r.reason, item: r.item, createdAt: Date.now() },
+      ...getSavedForLater(),
+    ]);
+    if (ok) {
+      currentBuyCheck.saved = true;
+      recordConsideredNotBought();
+      toast("Saved for later 🔖");
+      renderBuyCheckResult();
+      if (typeof renderSavedForLater === "function") renderSavedForLater();
+    }
+  }
+
+  if (action === "swap") {
+    closeBuyCheckView();
+    showScreen("swap");
   }
 });
 

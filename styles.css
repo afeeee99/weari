@@ -3440,3 +3440,52 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 10px; padding: 0; }
 
 /* Toasts and karma pop-ups are messages only: let taps reach the buttons underneath */
 .toast, .karma-popup { pointer-events: none; }
+
+/* ---------- Buying Brain result screen ---------- */
+.buycheck-view {
+  position: fixed; inset: 0; z-index: 60; overflow-y: auto;
+  background: var(--bg); animation: fade 0.2s;
+  padding: env(safe-area-inset-top, 0px) 0 calc(24px + env(safe-area-inset-bottom, 0px));
+}
+.buycheck-top {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 430px; margin: 0 auto; padding: 12px 16px;
+  background: rgba(250, 248, 245, 0.92); backdrop-filter: blur(10px);
+}
+.buycheck-title { font-weight: 700; font-size: 16px; }
+.buycheck-close {
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: var(--accent-soft); color: var(--text); font-size: 16px;
+}
+.buycheck-content { max-width: 430px; margin: 0 auto; padding: 4px 16px 0; }
+.buycheck-photo {
+  display: block; width: 100%; max-height: 34vh; object-fit: contain;
+  background: var(--accent-soft); border-radius: var(--radius); margin-bottom: 14px;
+}
+.buycheck-thinking { text-align: center; color: var(--muted); padding: 18px 0; }
+.buycheck-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.buycheck-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 999px; font-weight: 700; font-size: 14px;
+}
+.buycheck-badge.skip { background: #e8f3ec; color: #1f6b43; }
+.buycheck-badge.buy { background: #fdf3dc; color: #7a5200; }
+.buycheck-badge.swap_first { background: #eef1fb; color: #34478a; }
+.buycheck-test { font-size: 12px; color: var(--muted); }
+.buycheck-item-name { font-size: 20px; letter-spacing: -0.01em; margin: 6px 0 4px; }
+.buycheck-reason { font-size: 15px; line-height: 1.5; margin: 0 0 14px; }
+.buycheck-cpw {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 16px; font-size: 14px;
+}
+.buycheck-cpw strong { font-size: 18px; }
+.buycheck-cpw span { color: var(--muted); font-size: 12px; }
+.buycheck-row-title { font-size: 14px; margin: 4px 0 8px; }
+.buycheck-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 12px; scrollbar-width: none; }
+.buycheck-row::-webkit-scrollbar { display: none; }
+.buycheck-row .chat-card { flex: 0 0 31%; min-width: 96px; }
+.chat-card small { display: block; padding: 0 6px 6px; color: var(--muted); font-size: 10.5px; }
+.buycheck-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.btn-primary.buycheck-skip { background: var(--swap); }
+.btn-primary.buycheck-skip:disabled { opacity: 0.75; }
