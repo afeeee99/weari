@@ -8,6 +8,8 @@ import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 // Settings — change these in one place
 // =====================================================
 const GEMINI_MODEL = 'gemini-3.8-flash';
+const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash-lite'; // tried once, only when GEMINI_MODEL answers 503 (busy)
+const FALLBACK_WAIT_MS = 2000;
 const PER_VISITOR_DAILY_LIMIT = 15; // AI requests per visitor (IP address) per day
 const GLOBAL_DAILY_CAP = 500; // AI requests for the whole app per day
 
@@ -66,11 +68,11 @@ function rateLimit(req, res, next) {
   next();
 }
 
-// One Gemini call, no retries. Returns parsed JSON (or text when no schema is given).
-async function askGemini({ contents, schema }) {
-  if (!ai) throw Object.assign(new Error('Gemini API key is not configured'), { status: 503 });
+// One Gemini call per request. The only exception: if the main model is busy (503),
+// wait 2 seconds and try the lighter fallback model once. Never on 429 or any other error.
+async function callModel(model, contents, schema) {
   const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
+    model,
     contents,
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
@@ -80,6 +82,18 @@ async function askGemini({ contents, schema }) {
   const text = (response?.text || '').trim();
   if (!text) throw new Error('Empty response from Gemini');
   return schema ? JSON.parse(text) : text;
+}
+
+async function askGemini({ contents, schema }) {
+  if (!ai) throw Object.assign(new Error('Gemini API key is not configured'), { status: 503 });
+  try {
+    return await callModel(GEMINI_MODEL, contents, schema);
+  } catch (err) {
+    if (err?.status !== 503) throw err;
+    console.warn(`${GEMINI_MODEL} is busy (503); trying ${GEMINI_FALLBACK_MODEL} once in ${FALLBACK_WAIT_MS / 1000}s`);
+    await new Promise((r) => setTimeout(r, FALLBACK_WAIT_MS));
+    return callModel(GEMINI_FALLBACK_MODEL, contents, schema);
+  }
 }
 
 const source = () => (MOCK_GEMINI ? 'mock' : 'gemini');
@@ -344,5 +358,5 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 app.listen(PORT, () => {
   console.log(`Weari running on http://localhost:${PORT}`);
-  console.log(MOCK_GEMINI ? 'MOCK_GEMINI=true: using fake AI answers (no quota used)' : ai ? `Gemini model: ${GEMINI_MODEL}` : 'No GEMINI_API_KEY set: the app will use basic rules');
+  console.log(MOCK_GEMINI ? 'MOCK_GEMINI=true: using fake AI answers (no quota used)' : ai ? `Gemini model: ${GEMINI_MODEL} (fallback on 503: ${GEMINI_FALLBACK_MODEL})` : 'No GEMINI_API_KEY set: the app will use basic rules');
 });

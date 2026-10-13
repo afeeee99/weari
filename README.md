@@ -54,7 +54,9 @@ answers, and the app labels them as test mode rather than Gemini.
 | `POST /api/style` | occasion, wardrobe as compact text (no photos), and only the onboarding goal, styles and occasions | outfit item ids from your wardrobe + a two-sentence explanation |
 | `POST /api/review` | pieces of a custom outfit | a two-sentence review (not used by the app yet) |
 
-- One Gemini call per request, no retries. The model is set in `GEMINI_MODEL` at the top of `server.js`.
+- One Gemini call per request. The model is set in `GEMINI_MODEL` at the top of `server.js`.
+  Only exception: if that model answers 503 (busy), the server waits 2 seconds and tries
+  `GEMINI_FALLBACK_MODEL` (the lighter `gemini-3.5-flash-lite`) once. Never on a 429 or any other error.
 - Limits (top of `server.js`): `PER_VISITOR_DAILY_LIMIT` (15 per visitor per day) and
   `GLOBAL_DAILY_CAP` (whole app per day). They are kept in memory, so they reset at
   midnight UTC or when the server restarts.
