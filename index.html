@@ -124,7 +124,10 @@
         <div class="empty-icon">👗</div>
         <h2>Your wardrobe is empty</h2>
         <p>Add your first piece to get started.</p>
-        <button class="btn-primary" data-go="add">Add item</button>
+        <div class="empty-actions">
+          <button class="btn-primary" data-go="add">Add item</button>
+          <button type="button" class="btn-secondary" id="btn-load-demo-wardrobe">Load demo wardrobe</button>
+        </div>
       </div>
 
       <div id="grid" class="grid"></div>
@@ -215,10 +218,12 @@
         <h2 class="screen-title">Style me</h2>
       </div>
 
-      <!-- Two Clear Styling Mode Tabs -->
+      <!-- Styling Mode Tabs -->
       <div class="segmented style-modes-tabs" id="style-mode-tabs">
-        <button type="button" class="seg active" data-style-mode="ai">✨ AI Stylist</button>
-        <button type="button" class="seg" data-style-mode="manual">🎨 Create your own</button>
+        <button type="button" class="seg active" data-style-mode="ai">✨ Stylist</button>
+        <button type="button" class="seg" data-style-mode="manual">🎨 Create</button>
+        <button type="button" class="seg" data-style-mode="favorites">❤️ Favorites</button>
+        <button type="button" class="seg" data-style-mode="plan">📅 Plan</button>
       </div>
 
       <!-- MODE 1: AI STYLIST (Current Gemini flow) -->
@@ -318,6 +323,9 @@
             <button type="button" id="btn-manual-save" class="btn-secondary" style="flex:1;">
               💾 Save
             </button>
+            <button type="button" id="btn-manual-fav" class="btn-secondary" style="flex:1;">
+              ♥ Favorite
+            </button>
           </div>
 
           <button type="button" id="btn-manual-review" class="btn-review-look">
@@ -333,6 +341,46 @@
           <h3 class="section-title">Saved outfits</h3>
           <div id="saved-outfits-list" class="saved-outfits-list"></div>
         </div>
+      </div>
+
+      <!-- MODE 3: FAVORITES -->
+      <div id="style-mode-favorites" hidden>
+        <div class="fav-header-bar">
+          <div>
+            <h3 class="section-title">Favorite looks</h3>
+            <p class="section-sub">Your curated combinations marked with a heart</p>
+          </div>
+        </div>
+
+        <!-- Label filter chips -->
+        <div class="fav-label-filters" id="fav-label-filters">
+          <button type="button" class="chip selected" data-fav-filter="all">All</button>
+          <button type="button" class="chip" data-fav-filter="Work">Work</button>
+          <button type="button" class="chip" data-fav-filter="Gym">Gym</button>
+          <button type="button" class="chip" data-fav-filter="Weekend">Weekend</button>
+        </div>
+
+        <div id="favorites-list" class="favorites-list"></div>
+      </div>
+
+      <!-- MODE 4: WEEKLY PLAN -->
+      <div id="style-mode-plan" hidden>
+        <div class="plan-header-bar">
+          <div>
+            <h3 class="section-title">Weekly wardrobe plan</h3>
+            <p class="section-sub">Plan your outfits for Monday through Sunday</p>
+          </div>
+          <label class="toggle-row plan-repeat-toggle">
+            <span>
+              <strong>Repeat weekly</strong>
+            </span>
+            <input type="checkbox" id="plan-repeat-checkbox" />
+            <span class="switch"></span>
+          </label>
+        </div>
+
+        <!-- Horizontal strip of Monday to Sunday day cards -->
+        <div class="plan-days-strip" id="plan-days-strip"></div>
       </div>
     </section>
     <!-- ============ SWAP SCREEN ============ -->
@@ -362,12 +410,15 @@
         <div class="impact-header">
           <span class="impact-icon">🌱</span>
           <div>
-            <h3 class="impact-title">Circular impact</h3>
-            <p class="impact-sub" id="impact-counts"></p>
+            <h3 class="impact-title">Circular impact <span class="estimated-tag">Estimated</span></h3>
+            <p class="impact-sub" id="impact-counts">Estimated · 0 completed swaps · 0 purchases avoided</p>
           </div>
         </div>
-        <div class="impact-highlight" id="impact-headline"></div>
-        <div class="impact-caption" id="impact-detail"></div>
+        <div class="impact-highlight" id="impact-headline">Estimated ~0.0 kg CO₂e saved</div>
+        <div class="impact-caption" id="impact-detail">Estimated impact: ~0.0 kg CO₂e and ~0L water preserved across 0 completed swaps and 0 purchases avoided.</div>
+        <p class="impact-estimate-note" id="impact-estimate-note">
+          <small><strong>How we estimate this:</strong> Based on estimated lifecycle savings from completed swaps and retail purchases avoided by rewearing.</small>
+        </p>
       </div>
 
       <!-- Wardrobe usage (30 days) -->
@@ -488,39 +539,146 @@
     <!-- ============ PROFILE SCREEN ============ -->
     <section id="screen-profile" class="screen" hidden>
       <h2 class="screen-title">Profile</h2>
-      <div class="profile-placeholder-box">
-        <div class="profile-placeholder-avatar">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
+
+      <!-- User Identity Card -->
+      <div class="profile-card-user">
+        <div class="profile-user-header">
+          <div class="profile-avatar" id="profile-avatar">
+            <span id="profile-avatar-initial">E</span>
+          </div>
+          <div class="profile-user-fields">
+            <div class="profile-name-row">
+              <label for="profile-first-name" class="profile-field-tiny-label">First name</label>
+              <input type="text" id="profile-first-name" class="profile-input profile-name-input" placeholder="Your name" value="Elena" maxlength="40" />
+            </div>
+            <div class="profile-email-row">
+              <label for="profile-email" class="profile-field-tiny-label">Email <small class="profile-device-inline">(Stays on this device)</small></label>
+              <input type="email" id="profile-email" class="profile-input profile-email-input" placeholder="email@example.com (optional)" />
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="btn-google-disabled" disabled aria-disabled="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
           </svg>
-        </div>
-        <h3 class="profile-placeholder-heading">Your Profile</h3>
-        <p class="profile-placeholder-text">Manage your wardrobe settings and mindful style preferences.</p>
+          <span>Sign in with Google</span>
+          <span class="pill-coming-soon">Coming soon</span>
+        </button>
+      </div>
 
-        <div class="profile-nav-list">
-          <button type="button" class="profile-nav-row" id="btn-profile-settings">
-            <div class="profile-nav-row-main">
-              <span class="profile-nav-icon">⚙️</span>
-              <div class="profile-nav-labels">
-                <strong>Settings & Preferences</strong>
-                <small>Style goals, occasions & replay onboarding</small>
-              </div>
+      <!-- Karma Level Card (tap opens Karma) -->
+      <div class="profile-karma-card" id="profile-karma-card" data-go="karma" role="button" tabindex="0" title="View Wardrobe Karma">
+        <div class="profile-karma-top">
+          <div class="profile-karma-badge">
+            <span class="profile-karma-icon" id="profile-karma-icon">🌱</span>
+            <div>
+              <div class="profile-card-kicker">Wardrobe Karma</div>
+              <h3 class="profile-karma-level" id="profile-karma-level-name">Closet Curious</h3>
             </div>
-            <span class="profile-nav-chevron">›</span>
-          </button>
-
-          <button type="button" class="profile-nav-row" data-go="karma">
-            <div class="profile-nav-row-main">
-              <span class="profile-nav-icon">✨</span>
-              <div class="profile-nav-labels">
-                <strong>Wardrobe Karma</strong>
-                <small>Levels, conscious badges & streak</small>
-              </div>
-            </div>
-            <span class="profile-nav-chevron">›</span>
-          </button>
+          </div>
+          <div class="profile-karma-points-badge">
+            <span id="profile-karma-points">0</span> pts ›
+          </div>
         </div>
+        <div class="profile-karma-bar-wrap">
+          <div class="profile-karma-track">
+            <div class="profile-karma-fill" id="profile-karma-fill" style="width: 0%;"></div>
+          </div>
+          <div class="profile-karma-meta">
+            <span id="profile-karma-meta-text">0 / 50 pts to Thrift Thinker</span>
+            <span id="profile-karma-meta-pct">0%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Style Card -->
+      <div class="profile-card-section" id="profile-my-style-card">
+        <div class="profile-section-header">
+          <div>
+            <h3 class="profile-section-title">My style</h3>
+            <p class="profile-section-sub">Your personal closet curation preferences</p>
+          </div>
+          <button type="button" class="btn-link-action" id="btn-edit-my-style">Edit</button>
+        </div>
+        <div class="profile-style-answers" id="profile-style-answers"></div>
+      </div>
+
+      <!-- My Impact Row -->
+      <div class="profile-impact-section">
+        <h3 class="profile-section-title">My impact</h3>
+        <div class="profile-impact-grid">
+          <div class="profile-impact-stat-card">
+            <div class="profile-impact-num" id="profile-impact-pieces">0</div>
+            <div class="profile-impact-label">Pieces in wardrobe</div>
+          </div>
+          <div class="profile-impact-stat-card">
+            <div class="profile-impact-num" id="profile-impact-outfits">0</div>
+            <div class="profile-impact-label">Outfits saved</div>
+          </div>
+          <div class="profile-impact-stat-card">
+            <div class="profile-impact-num" id="profile-impact-requests">0</div>
+            <div class="profile-impact-label">Swap requests sent</div>
+          </div>
+          <div class="profile-impact-stat-card">
+            <div class="profile-impact-num" id="profile-impact-avoided">0</div>
+            <div class="profile-impact-label">Purchases avoided</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weari Plus Card -->
+      <div class="profile-plus-card">
+        <div class="profile-plus-header">
+          <div class="profile-plus-title-row">
+            <h3 class="profile-plus-title">Weari Plus</h3>
+            <span class="profile-plus-badge">Upcoming</span>
+          </div>
+          <p class="profile-plus-sub">Elevate your conscious wardrobe experience</p>
+        </div>
+        <ul class="profile-plus-perks">
+          <li><span>✨</span><strong>Unlimited AI styling</strong> — tailored looks for any event</li>
+          <li><span>📊</span><strong>Advanced insights</strong> — cost-per-wear and textile footprints</li>
+          <li><span>🔁</span><strong>Priority swaps</strong> — first access to community pieces</li>
+        </ul>
+        <div class="profile-plus-action">
+          <button type="button" id="btn-join-waitlist" class="btn-primary btn-block">Join the waitlist</button>
+          <div id="waitlist-confirmed" class="waitlist-confirmed" hidden>✓ You're on the list</div>
+        </div>
+      </div>
+
+      <!-- Settings Card -->
+      <div class="profile-settings-card">
+        <h3 class="profile-section-title">Settings</h3>
+        <div class="profile-settings-rows">
+          <div class="profile-settings-item">
+            <div>
+              <strong>Replay onboarding</strong>
+              <small>Retake style goals & wardrobe questions</small>
+            </div>
+            <button type="button" class="btn-secondary" id="btn-profile-replay-ob">Replay</button>
+          </div>
+          <div class="profile-settings-item">
+            <div>
+              <strong>Demo wardrobe</strong>
+              <small>Load 14 curated sample pieces</small>
+            </div>
+            <button type="button" class="btn-secondary" id="btn-profile-load-demo">Load demo</button>
+          </div>
+          <div class="profile-settings-item">
+            <div>
+              <strong>Reset app</strong>
+              <small>Clear all wardrobe data and restart</small>
+            </div>
+            <button type="button" class="btn-danger-link" id="btn-profile-reset-app">Reset app</button>
+          </div>
+        </div>
+        <p class="profile-device-footer-note">
+          🔒 Your wardrobe and profile stay on this device.
+        </p>
       </div>
     </section>
   </main>
@@ -653,7 +811,7 @@
       </div>
 
       <div class="settings-section">
-        <h4 class="settings-section-title">Experience</h4>
+        <h4 class="settings-section-title">Experience & Data</h4>
         <div class="settings-row">
           <div>
             <strong>Replay onboarding</strong>
@@ -661,8 +819,84 @@
           </div>
           <button type="button" id="btn-replay-onboarding" class="btn-secondary">Replay</button>
         </div>
+        <div class="settings-row">
+          <div>
+            <strong>Load demo wardrobe</strong>
+            <small>Add 14 curated sample pieces to test features</small>
+          </div>
+          <button type="button" id="btn-settings-load-demo" class="btn-secondary">Load demo</button>
+        </div>
+        <div class="settings-row">
+          <div>
+            <strong>Reset app</strong>
+            <small>Clear all local data and reset wardrobe</small>
+          </div>
+          <button type="button" id="btn-settings-reset-app" class="btn-danger-link">Reset app</button>
+        </div>
+      </div>
+      <p class="settings-device-note">
+        🔒 Your wardrobe and profile stay on this device.
+      </p>
+    </div>
+  </div>
+
+  <!-- ============ FAVORITE LABEL MODAL ============ -->
+  <div id="fav-label-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="fav-label-sheet" class="sheet fav-label-sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <h3>Favorite look ❤️</h3>
+        <p>Add an optional label to organize this outfit</p>
+      </div>
+      <button type="button" class="btn-close" id="fav-label-close">✕</button>
+    </div>
+    <div class="fav-label-content">
+      <label class="field-label">Quick labels</label>
+      <div class="fav-label-presets">
+        <button type="button" class="fav-preset-chip" data-label-preset="Work">Work</button>
+        <button type="button" class="fav-preset-chip" data-label-preset="Gym">Gym</button>
+        <button type="button" class="fav-preset-chip" data-label-preset="Weekend">Weekend</button>
+      </div>
+      <div class="field-group" style="margin-top:14px;">
+        <label for="fav-custom-label" class="field-label">Custom label <span class="hint">(optional)</span></label>
+        <input type="text" id="fav-custom-label" class="text-input" placeholder="e.g. Date night, Travel, Casual" maxlength="30" />
+      </div>
+      <div class="fav-label-actions">
+        <button type="button" id="btn-save-fav-label" class="btn-primary btn-block">Save favorite</button>
+        <button type="button" id="btn-skip-fav-label" class="btn-link-action btn-block">Save without label</button>
       </div>
     </div>
+  </div>
+
+  <!-- ============ PLAN OUTFIT PICKER SHEET ============ -->
+  <div id="plan-picker-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="plan-picker-sheet" class="sheet plan-picker-sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <h3 id="plan-picker-title">Assign to Monday</h3>
+        <p>Choose an outfit from your saved looks or favorites</p>
+      </div>
+      <button type="button" class="btn-close" id="plan-picker-close">✕</button>
+    </div>
+    <div id="plan-picker-list" class="plan-picker-list"></div>
+    <button type="button" class="btn-secondary btn-block sheet-cancel" id="plan-picker-cancel">Cancel</button>
+  </div>
+
+  <!-- ============ PLAN MOVE SHEET ============ -->
+  <div id="plan-move-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="plan-move-sheet" class="sheet plan-move-sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <h3 id="plan-move-title">Move outfit</h3>
+        <p>Choose which day to move this look to</p>
+      </div>
+      <button type="button" class="btn-close" id="plan-move-close">✕</button>
+    </div>
+    <div id="plan-move-days-list" class="plan-move-days-list"></div>
+    <button type="button" class="btn-secondary btn-block sheet-cancel" id="plan-move-cancel">Cancel</button>
   </div>
 
   <!-- Onboarding Fullscreen Flow -->
