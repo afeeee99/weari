@@ -52,7 +52,7 @@ answers, and the app labels them as test mode rather than Gemini.
 |---|---|---|
 | `POST /api/tag` | one photo, resized to 512px | `name`, `category`, `color`, `occasions` (from the app's lists) |
 | `POST /api/style` | occasion, wardrobe as compact text (no photos), and only the onboarding goal, styles and occasions | outfit item ids from your wardrobe + a two-sentence explanation |
-| `POST /api/review` | pieces of a custom outfit | a two-sentence review (not used by the app yet) |
+| `POST /api/review` | category, color and name of each piece in a "Create your own" look | a two-sentence review (one call, no fallback model) |
 
 - One Gemini call per request. The model is set in `GEMINI_MODEL` at the top of `server.js`.
   Only exception: if that model answers 503 (busy), the server waits 2 seconds and tries
