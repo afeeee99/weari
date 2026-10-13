@@ -3548,3 +3548,22 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 10px; padding: 0; }
 }
 .bb-stat strong { font-size: 26px; letter-spacing: -0.02em; }
 .bb-stat span { font-size: 13px; color: var(--muted); }
+
+/* Buying Brain: detected item line and edit form */
+.buycheck-detected { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+.buycheck-detected .dot { width: 12px; height: 12px; }
+.buycheck-sep { opacity: 0.6; }
+.buycheck-edit-link { margin-left: 6px; font-size: 14px; color: var(--text); font-weight: 600; }
+.buycheck-edited { font-size: 12.5px; color: var(--swap); margin: -4px 0 10px; }
+.buycheck-edit {
+  display: flex; flex-direction: column; gap: 10px; margin: 0 0 14px; padding: 14px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.buycheck-edit label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--muted); flex: 1; }
+.buycheck-edit input, .buycheck-edit select {
+  font: inherit; font-size: 15px; font-weight: 400; color: var(--text);
+  padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+.buycheck-edit-row { display: flex; gap: 10px; }
+.buycheck-edit-actions { display: flex; gap: 8px; }
+.buycheck-edit-actions button { flex: 1; padding: 11px 14px; }

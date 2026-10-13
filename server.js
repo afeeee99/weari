@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
-import { buyingBrain, buyingBrainRules, SHOP_VERDICTS, pairsWith } from './buying-brain.js';
+import { buyingBrain, buyingBrainRules, SHOP_VERDICTS, pairsWith, shopCheck } from './buying-brain.js';
 
 // =====================================================
 // Settings — change these in one place
@@ -37,7 +37,8 @@ app.set('trust proxy', 1); // Cloud Run sits behind one Google proxy; this gives
 app.use(express.json({ limit: '1mb' }));
 
 // Serve only the app's public files (not server.js, package.json, node_modules, .env…)
-const PUBLIC_FILES = ['index.html', 'styles.css', 'app.js', 'stylist.js', 'swap-data.js'];
+// buying-brain.js is shared: the server uses it, and the app uses it to re-check edited items locally
+const PUBLIC_FILES = ['index.html', 'styles.css', 'app.js', 'stylist.js', 'swap-data.js', 'buying-brain.js'];
 app.get(['/', ...PUBLIC_FILES.map((f) => `/${f}`)], (req, res) => {
   const file = req.path === '/' ? 'index.html' : req.path.slice(1);
   res.sendFile(path.join(__dirname, file));
@@ -593,24 +594,9 @@ const MOCK_SHOP_ITEMS = [
 ];
 let mockShopTurn = 0;
 
-const nameOf = (it) => it.name || `${it.color} ${it.category}`;
-const listNames = (items) => {
-  const names = items.map((it) => `your ${nameOf(it)}`);
-  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join('');
-};
-
 function mockBuycheck(items) {
   const item = MOCK_SHOP_ITEMS[mockShopTurn++ % MOCK_SHOP_ITEMS.length];
-  const brain = buyingBrain(item, items);
-  const byId = new Map(items.map((it) => [it.id, it]));
-  const similar = brain.similarIds.slice(0, 3).map((id) => byId.get(id));
-  const pairs = pairsWith(item, items).map((id) => byId.get(id));
-  const second = similar.length
-    ? `Restyle ${listNames(similar)} instead.`
-    : pairs.length
-      ? `It would pair well with ${listNames(pairs)}.`
-      : 'Add a few pieces to your wardrobe so I can compare.';
-  return { ...item, verdict: SHOP_VERDICTS[brain.verdict], reason: `${brain.reason} ${second}`, similar_item_ids: similar.map((it) => it.id), pairs_with_ids: pairs.map((it) => it.id) };
+  return { ...item, ...shopCheck(item, items) };
 }
 
 // Keep only valid ids, labels and verdicts; fill gaps from the Buying Brain.

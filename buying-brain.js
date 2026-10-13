@@ -75,6 +75,33 @@ export function buyingBrainRules(labels = { skip: 'skip', swap_first: 'swap_firs
 // Verdict names on the Buying Brain shop-scan screen
 export const SHOP_VERDICTS = { skip: 'skip', swap_first: 'try rewear first', buy: 'real gap' };
 
+// Full shop-scan answer from the rules alone (no AI). Used by mock mode on the server and by the
+// app when you edit the detected item, so both give exactly the same verdict and wording.
+//   candidate: { category, color, occasions? }
+//   wardrobe:  [{ id, name, category, color, occasions, wears }]
+const nameOf = (it) => it.name || `${it.color} ${it.category}`;
+const listNames = (items) => {
+  const names = items.map((it) => `your ${nameOf(it)}`);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join('');
+};
+export function shopCheck(candidate, wardrobe) {
+  const brain = buyingBrain(candidate, wardrobe);
+  const byId = new Map(wardrobe.map((it) => [it.id, it]));
+  const similar = brain.similarIds.slice(0, 3).map((id) => byId.get(id));
+  const pairs = pairsWith(candidate, wardrobe).filter((id) => !brain.similarIds.includes(id)).map((id) => byId.get(id));
+  const second = similar.length
+    ? `Restyle ${listNames(similar)} instead.`
+    : pairs.length
+      ? `It would pair well with ${listNames(pairs)}.`
+      : 'Add a few pieces to your wardrobe so I can compare.';
+  return {
+    verdict: SHOP_VERDICTS[brain.verdict],
+    reason: `${brain.reason} ${second}`,
+    similar_item_ids: similar.map((it) => it.id),
+    pairs_with_ids: pairs.map((it) => it.id),
+  };
+}
+
 // Owned pieces that would go with the candidate: other categories, a shared occasion if possible, most-worn first
 const PAIRS = {
   top: ['bottom', 'shoes', 'outerwear', 'accessory'],

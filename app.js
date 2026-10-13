@@ -2743,6 +2743,74 @@ function buyCheckRow(title, ids) {
       .join("")}</div>`;
 }
 
+const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+
+// "Top · ● White · Edit" under the item name
+function buyCheckDetectedLine(r) {
+  return `
+    <div class="buycheck-detected">
+      <span>${escapeHtml(capitalize(r.category))}</span>
+      <span class="buycheck-sep">·</span>
+      <span class="dot" style="background:${colorHex(r.color)}"></span>
+      <span>${escapeHtml(capitalize(r.color))}</span>
+      <button type="button" class="link-btn buycheck-edit-link" data-buycheck="edit">Edit</button>
+    </div>`;
+}
+
+function buyCheckEditForm(r) {
+  const options = (list, current) =>
+    list.map((v) => `<option value="${v}" ${v === current ? "selected" : ""}>${capitalize(v)}</option>`).join("");
+  return `
+    <form class="buycheck-edit" id="buycheck-edit-form">
+      <label>Name<input name="name" maxlength="40" value="${escapeHtml(r.item_name || "")}" /></label>
+      <div class="buycheck-edit-row">
+        <label>Category<select name="category">${options(CATEGORIES, r.category)}</select></label>
+        <label>Color<select name="color">${options(COLORS.map((c) => c.name), r.color)}</select></label>
+      </div>
+      <div class="buycheck-edit-actions">
+        <button type="submit" class="btn-primary">Update verdict</button>
+        <button type="button" class="btn-secondary" data-buycheck="cancel-edit">Cancel</button>
+      </div>
+    </form>`;
+}
+
+// Re-run the verdict on this device with buying-brain.js (the same rules the server uses) — no AI call
+async function recheckBuyCheckLocally({ name, category, color }) {
+  if (!window.BuyingBrain) throw new Error("Buying Brain rules not loaded");
+  const items = await getAllItems();
+  chatItemsById = new Map(items.map((it) => [String(it.id), it]));
+  const wardrobe = items.map((it) => ({
+    id: String(it.id),
+    name: it.name || describe(it),
+    category: it.category,
+    color: it.color,
+    occasions: it.occasions || [],
+    wears: it.wearCount || 0,
+  }));
+  const r = currentBuyCheck.result;
+  const local = window.BuyingBrain.shopCheck({ category, color, occasions: r.occasions || [] }, wardrobe);
+  currentBuyCheck.result = { ...r, item_name: name || `${capitalize(color)} ${category}`, category, color, confidence: "high", ...local, edited: true };
+}
+
+$("#buycheck-view")?.addEventListener("submit", async (e) => {
+  if (e.target.id !== "buycheck-edit-form") return;
+  e.preventDefault();
+  const data = new FormData(e.target);
+  try {
+    await recheckBuyCheckLocally({
+      name: String(data.get("name") || "").trim().slice(0, 40),
+      category: String(data.get("category")),
+      color: String(data.get("color")),
+    });
+    currentBuyCheck.editing = false;
+    renderBuyCheckResult();
+    toast("Verdict updated ✨");
+  } catch (err) {
+    console.warn("Local re-check failed:", err.message);
+    toast("Couldn't update the verdict, please try again");
+  }
+});
+
 function renderBuyCheckResult() {
   const { photo, price, result: r, skipped, saved } = currentBuyCheck;
   const v = BUYCHECK_VERDICTS[r.verdict] || BUYCHECK_VERDICTS["try rewear first"];
@@ -2753,6 +2821,8 @@ function renderBuyCheckResult() {
       ${r.source === "mock" ? `<span class="buycheck-test">Test mode, not real Gemini</span>` : ""}
     </div>
     ${r.item_name ? `<h2 class="buycheck-item-name">${escapeHtml(r.item_name)}</h2>` : ""}
+    ${currentBuyCheck.editing ? buyCheckEditForm(r) : buyCheckDetectedLine(r)}
+    ${r.edited ? `<p class="buycheck-edited">Updated with your edits, using the same Buying Brain rules (no new AI call).</p>` : ""}
     <p class="buycheck-reason">${escapeHtml(r.reason)}</p>
     ${
       price
@@ -2777,6 +2847,11 @@ $("#buycheck-view")?.addEventListener("click", (e) => {
   if (!action || !currentBuyCheck) return;
 
   if (action === "retry") runBuyCheck(currentBuyCheck.photo, currentBuyCheck.price);
+
+  if (action === "edit" || action === "cancel-edit") {
+    currentBuyCheck.editing = action === "edit";
+    renderBuyCheckResult();
+  }
 
   if (action === "skip" && !currentBuyCheck.skipped) {
     currentBuyCheck.skipped = true;

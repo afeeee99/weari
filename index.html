@@ -1114,5 +1114,10 @@
   <script src="stylist.js"></script>
   <script src="swap-data.js"></script>
   <script src="app.js"></script>
+  <!-- Same Buying Brain rules as the server, for re-checking an edited item without another AI call -->
+  <script type="module">
+    import * as BuyingBrain from "./buying-brain.js";
+    window.BuyingBrain = BuyingBrain;
+  </script>
 </body>
 </html>
