@@ -1,0 +1,7 @@
+# Keep secrets and local-only files out of the Cloud Run image
+.env
+.env.*
+.dev.env.json
+node_modules
+.git
+.DS_Store
