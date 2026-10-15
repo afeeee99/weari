@@ -289,6 +289,11 @@
           <input type="text" id="manual-outfit-name" class="text-input" placeholder="e.g. Saturday Coffee Run, Summer Wedding" maxlength="60" />
         </div>
 
+        <div class="field-group">
+          <span class="field-label">Label <span class="hint">(optional)</span></span>
+          <div class="label-chip-row" id="manual-label-chips"></div>
+        </div>
+
         <!-- Arranged Outfit Slots Canvas -->
         <div class="outfit-canvas">
           <div class="canvas-header">
@@ -379,6 +384,7 @@
         <!-- Saved Outfits Gallery -->
         <div class="saved-outfits-section" id="saved-outfits-section">
           <h3 class="section-title">Saved outfits</h3>
+          <div class="fav-label-filters" id="saved-label-filters"></div>
           <div id="saved-outfits-list" class="saved-outfits-list"></div>
         </div>
       </div>
@@ -393,12 +399,7 @@
         </div>
 
         <!-- Label filter chips -->
-        <div class="fav-label-filters" id="fav-label-filters">
-          <button type="button" class="chip selected" data-fav-filter="all">All</button>
-          <button type="button" class="chip" data-fav-filter="Work">Work</button>
-          <button type="button" class="chip" data-fav-filter="Gym">Gym</button>
-          <button type="button" class="chip" data-fav-filter="Weekend">Weekend</button>
-        </div>
+        <div class="fav-label-filters" id="fav-label-filters"></div>
 
         <div id="favorites-list" class="favorites-list"></div>
       </div>
@@ -919,27 +920,56 @@
     <div class="sheet-handle"></div>
     <div class="sheet-header">
       <div>
-        <h3>Favorite look ❤️</h3>
-        <p>Add an optional label to organize this outfit</p>
+        <h3 id="fav-label-title">Favorite look ❤️</h3>
+        <p id="fav-label-sub">Add an optional label to organize this outfit</p>
       </div>
       <button type="button" class="btn-close" id="fav-label-close">✕</button>
     </div>
     <div class="fav-label-content">
-      <label class="field-label">Quick labels</label>
-      <div class="fav-label-presets">
-        <button type="button" class="fav-preset-chip" data-label-preset="Work">Work</button>
-        <button type="button" class="fav-preset-chip" data-label-preset="Gym">Gym</button>
-        <button type="button" class="fav-preset-chip" data-label-preset="Weekend">Weekend</button>
-      </div>
-      <div class="field-group" style="margin-top:14px;">
-        <label for="fav-custom-label" class="field-label">Custom label <span class="hint">(optional)</span></label>
-        <input type="text" id="fav-custom-label" class="text-input" placeholder="e.g. Date night, Travel, Casual" maxlength="30" />
-      </div>
+      <span class="field-label">Labels</span>
+      <div class="fav-label-presets label-chip-row" id="fav-label-presets"></div>
       <div class="fav-label-actions">
         <button type="button" id="btn-save-fav-label" class="btn-primary btn-block">Save favorite</button>
         <button type="button" id="btn-skip-fav-label" class="btn-link-action btn-block">Save without label</button>
       </div>
     </div>
+  </div>
+
+  <!-- ============ CUSTOM LABELS SHEET (create, rename, delete) ============ -->
+  <div id="label-manager-backdrop" class="sheet-backdrop label-manager-backdrop" hidden></div>
+  <div id="label-manager-sheet" class="sheet label-manager-sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <h3>My labels</h3>
+        <p>Make your own labels like Brunch or Travel</p>
+      </div>
+      <button type="button" class="btn-close" id="label-manager-close">✕</button>
+    </div>
+
+    <form id="label-form" class="label-form" autocomplete="off">
+      <span class="field-label" id="label-form-title">New label</span>
+      <div class="label-form-row">
+        <input type="text" id="label-emoji-input" class="text-input label-emoji-input" placeholder="🏷️" maxlength="8" aria-label="Emoji" />
+        <input type="text" id="label-name-input" class="text-input" placeholder="e.g. Brunch" maxlength="16" aria-label="Label name" />
+      </div>
+      <div class="label-emoji-picks" id="label-emoji-picks"></div>
+      <p class="error" id="label-form-error" hidden></p>
+      <div class="label-form-actions">
+        <button type="submit" class="btn-primary" id="label-form-submit">Add label</button>
+        <button type="button" class="btn-link-action" id="label-form-cancel" hidden>Cancel rename</button>
+      </div>
+    </form>
+
+    <div class="label-confirm" id="label-confirm" hidden>
+      <p id="label-confirm-text"></p>
+      <div class="label-confirm-actions">
+        <button type="button" class="btn-secondary" id="label-confirm-cancel">Cancel</button>
+        <button type="button" class="btn-primary" id="label-confirm-ok">Confirm</button>
+      </div>
+    </div>
+
+    <div class="label-list" id="label-list"></div>
   </div>
 
   <!-- ============ PLAN DAY SHEET (opened by tapping a day) ============ -->

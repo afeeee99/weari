@@ -3600,3 +3600,45 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 10px; padding: 0; }
 .buycheck-edit-actions button { flex: 1; padding: 11px 14px; }
 .buycheck-unsure p { font-size: 15px; }
 .buycheck-unsure .buycheck-test { display: block; margin-top: 10px; }
+
+/* ---------- Custom labels ---------- */
+.label-chip-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 6px;
+}
+.label-chip { text-transform: none; }
+.label-chip-new {
+  border-style: dashed; color: var(--muted); background: transparent;
+}
+.fav-label-presets { flex-wrap: wrap; }
+.label-manager-backdrop { z-index: 70; }
+.label-manager-sheet { z-index: 71; }
+.label-form { margin: 4px 0 12px; }
+.label-form-row { display: flex; gap: 8px; margin-top: 6px; }
+.label-form-row .text-input { flex: 1; min-width: 0; }
+.label-form-row .label-emoji-input { flex: 0 0 56px; text-align: center; font-size: 18px; }
+.label-emoji-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.label-emoji-pick {
+  width: 36px; height: 36px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card); font-size: 18px; line-height: 1;
+}
+.label-form .error { text-align: left; margin: 6px 0 0; }
+.label-form-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.label-form-actions .btn-primary { padding: 10px 20px; font-size: 14px; }
+.label-confirm {
+  background: var(--accent-soft); border-radius: 14px;
+  padding: 12px 14px; margin-bottom: 12px;
+}
+.label-confirm p { margin: 0 0 10px; font-size: 14px; line-height: 1.45; }
+.label-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.label-confirm-actions button { padding: 9px 16px; font-size: 13px; }
+.label-list { display: flex; flex-direction: column; gap: 6px; }
+.label-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px;
+}
+.label-row-name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.label-empty { font-size: 13px; color: var(--muted); margin: 0; }
+.label-form-row .label-emoji-input { padding-left: 4px; padding-right: 4px; }
+.saved-outfit-actions { flex-wrap: wrap; }

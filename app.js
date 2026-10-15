@@ -537,6 +537,7 @@ function normalizeOutfit(raw, allItems = []) {
   const occasion = raw.occasion || "casual";
   const createdAt = Number(raw.createdAt || raw.created_at) || Date.now();
   const notes = raw.notes || raw.explanation || "";
+  const label = raw.name || raw.title ? String(raw.label || "") : "";
 
   const rawPieces = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.pieces) ? raw.pieces : [];
   const items = rawPieces.map((p) => {
@@ -547,7 +548,7 @@ function normalizeOutfit(raw, allItems = []) {
     return p;
   });
 
-  return { id, name, occasion, items, createdAt, notes };
+  return { id, name, occasion, items, createdAt, notes, label };
 }
 
 function normalizeRequest(raw) {
@@ -895,6 +896,7 @@ function showScreen(name) {
   if (name === "style") {
     renderStyleOccasions();
     renderManualOutfit();
+    renderManualLabelChips();
     renderSavedOutfits();
     if (typeof renderFavorites === "function") renderFavorites();
     if (typeof renderWeeklyPlan === "function") renderWeeklyPlan();
@@ -1663,6 +1665,12 @@ let lastOutfitIds = [];
 // Saved Custom Outfits Storage
 const SAVED_OUTFITS_KEY = "weari_saved_outfits";
 
+// Outfit labels: built-in ones plus my own, saved under their own key
+const CUSTOM_LABELS_KEY = "weari_custom_labels";
+const BUILTIN_LABELS = ["Work", "Gym", "Weekend"];
+let manualLabel = "";
+let activeSavedFilter = "all";
+
 function getSavedOutfits() {
   try {
     const raw = localStorage.getItem(SAVED_OUTFITS_KEY);
@@ -1931,6 +1939,7 @@ $("#btn-manual-save")?.addEventListener("click", () => {
       photo: it.photo,
     })),
     createdAt: Date.now(),
+    label: manualLabel,
   });
   saveSavedOutfits(saved);
   awardKarma(10, "Saved custom look");
@@ -2000,10 +2009,30 @@ $("#btn-manual-review")?.addEventListener("click", async () => {
 function renderSavedOutfits() {
   const container = $("#saved-outfits-list");
   if (!container) return;
-  const list = getSavedOutfits();
+  const all = getSavedOutfits();
+
+  const chipsBox = $("#saved-label-filters");
+  if (chipsBox) {
+    chipsBox.hidden = all.length === 0;
+    chipsBox.innerHTML = labelChipsHtml({
+      selected: activeSavedFilter,
+      attr: "data-saved-filter",
+      withAll: true,
+      extra: all.map((o) => o.label),
+    });
+  }
+
+  if (all.length === 0) {
+    container.innerHTML = `<p style="font-size:13px; color:var(--muted); margin:0;">No saved outfits yet. Assemble pieces above and tap Save.</p>`;
+    return;
+  }
+
+  const list = activeSavedFilter === "all"
+    ? all
+    : all.filter((o) => (o.label || "").toLowerCase() === activeSavedFilter.toLowerCase());
 
   if (list.length === 0) {
-    container.innerHTML = `<p style="font-size:13px; color:var(--muted); margin:0;">No saved outfits yet. Assemble pieces above and tap Save.</p>`;
+    container.innerHTML = `<p style="font-size:13px; color:var(--muted); margin:0;">No saved outfits under "${escapeHtml(labelDisplay(activeSavedFilter))}" yet.</p>`;
     return;
   }
 
@@ -2012,7 +2041,10 @@ function renderSavedOutfits() {
       (outfit) => `
     <article class="saved-outfit-card" data-outfit-id="${outfit.id}">
       <div class="saved-outfit-header">
-        <h4 class="saved-outfit-title">${escapeHtml(outfit.name)}</h4>
+        <div class="fav-card-title-group">
+          <h4 class="saved-outfit-title">${escapeHtml(outfit.name)}</h4>
+          ${outfit.label ? `<span class="fav-card-label-tag">${escapeHtml(labelDisplay(outfit.label))}</span>` : ""}
+        </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button type="button" class="fav-heart-btn ${isOutfitFavorite(outfit.id) ? "active" : ""}" data-toggle-fav="${outfit.id}" title="Toggle favorite">♥</button>
           <button type="button" class="btn-link-action" data-delete-outfit="${outfit.id}" title="Delete look">Delete</button>
@@ -2024,13 +2056,32 @@ function renderSavedOutfits() {
       <div class="saved-outfit-actions">
         <button type="button" class="btn-card-small primary" data-wear-saved="${outfit.id}">✓ I wore this</button>
         <button type="button" class="btn-card-small" data-load-saved="${outfit.id}">Load into slots</button>
+        <button type="button" class="btn-card-small" data-label-saved="${outfit.id}">Label</button>
       </div>
     </article>`
     )
     .join("");
 }
 
+$("#saved-label-filters")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
+  const chip = e.target.closest("[data-saved-filter]");
+  if (!chip) return;
+  activeSavedFilter = chip.dataset.savedFilter;
+  renderSavedOutfits();
+});
+
 $("#saved-outfits-list")?.addEventListener("click", async (e) => {
+  const labelBtn = e.target.closest("[data-label-saved]");
+  if (labelBtn) {
+    const outfit = getSavedOutfits().find((o) => o.id === labelBtn.dataset.labelSaved);
+    if (outfit) openOutfitLabelSheet(outfit, "saved");
+    return;
+  }
+
   const favBtn = e.target.closest("[data-toggle-fav]");
   if (favBtn) {
     const id = favBtn.dataset.toggleFav;
@@ -4152,6 +4203,7 @@ function getAllWeariStorageKeys() {
     SAVED_OUTFITS_KEY, REQUESTS_KEY, ONBOARDING_COMPLETED_KEY, ONBOARDING_ANSWERS_KEY,
     PROFILE_KEY, PROFILE_DISMISSED_KEY, PROFILE_FIRST_NAME_KEY, PROFILE_EMAIL_KEY,
     WEARI_PLUS_WAITLIST_KEY, FAVORITES_STORAGE_KEY, WEEKLY_PLAN_KEY, PLAN_REPEAT_KEY,
+    CUSTOM_LABELS_KEY,
     "weari-favorite-outfits",
     ...LEGACY_ITEM_STORAGE_KEYS, ...LEGACY_WEAR_COUNT_KEYS, ...LEGACY_OUTFIT_KEYS,
     ...LEGACY_KARMA_KEYS, ...LEGACY_REQUEST_KEYS,
@@ -4387,15 +4439,39 @@ function toggleFavoriteOutfit(outfit) {
   }
 }
 
+// The label sheet either favorites an outfit or just labels a saved outfit
+let labelSheetMode = "favorite";
+let labelSheetSelected = "";
+
 function promptFavoriteOutfit(outfit) {
+  openOutfitLabelSheet(outfit, "favorite");
+}
+
+function openOutfitLabelSheet(outfit, mode) {
   pendingFavOutfit = outfit;
+  labelSheetMode = mode;
+  labelSheetSelected = outfit.label || "";
+  const isFav = mode === "favorite";
+  $("#fav-label-title").textContent = isFav ? "Favorite look ❤️" : "Label outfit";
+  $("#fav-label-sub").textContent = isFav ? "Add an optional label to organize this outfit" : `Pick a label for "${outfit.name}"`;
+  $("#btn-save-fav-label").textContent = isFav ? "Save favorite" : "Save label";
+  $("#btn-skip-fav-label").textContent = isFav ? "Save without label" : "Remove label";
+  renderFavLabelPresets();
   const sheet = $("#fav-label-sheet");
   const backdrop = $("#fav-label-backdrop");
-  const input = $("#fav-custom-label");
-  if (input) input.value = outfit.label || "";
-  document.querySelectorAll(".fav-preset-chip").forEach((c) => c.classList.remove("selected"));
   if (sheet) sheet.hidden = false;
   if (backdrop) backdrop.hidden = false;
+}
+
+function renderFavLabelPresets() {
+  const box = $("#fav-label-presets");
+  if (!box) return;
+  box.innerHTML = labelChipsHtml({
+    selected: labelSheetSelected,
+    attr: "data-label-preset",
+    chipClass: "fav-preset-chip",
+    extra: labelSheetSelected ? [labelSheetSelected] : [],
+  });
 }
 
 function closeFavLabelSheet() {
@@ -4409,19 +4485,30 @@ function closeFavLabelSheet() {
 $("#fav-label-close")?.addEventListener("click", closeFavLabelSheet);
 $("#fav-label-backdrop")?.addEventListener("click", closeFavLabelSheet);
 
-document.querySelectorAll(".fav-preset-chip").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".fav-preset-chip").forEach((b) => b.classList.toggle("selected", b === btn));
-    const input = $("#fav-custom-label");
-    if (input) input.value = btn.dataset.labelPreset;
-  });
+$("#fav-label-presets")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
+  const btn = e.target.closest("[data-label-preset]");
+  if (!btn) return;
+  const value = btn.dataset.labelPreset;
+  labelSheetSelected = labelSheetSelected.toLowerCase() === value.toLowerCase() ? "" : value;
+  renderFavLabelPresets();
 });
 
-$("#btn-save-fav-label")?.addEventListener("click", () => {
+function commitOutfitLabel(label) {
   if (!pendingFavOutfit) return;
-  const customInput = $("#fav-custom-label");
-  const selectedPreset = document.querySelector(".fav-preset-chip.selected")?.dataset.labelPreset;
-  const label = (customInput && customInput.value.trim()) || selectedPreset || "";
+  if (labelSheetMode === "saved") {
+    const list = getSavedOutfits();
+    const target = list.find((o) => o.id === pendingFavOutfit.id);
+    if (target) target.label = label;
+    saveSavedOutfits(list);
+    closeFavLabelSheet();
+    renderSavedOutfits();
+    toast(label ? `Labeled ${labelDisplay(label)}` : "Label removed");
+    return;
+  }
 
   const list = getFavoriteOutfits();
   const idx = list.findIndex((f) => f.id === pendingFavOutfit.id);
@@ -4439,29 +4526,11 @@ $("#btn-save-fav-label")?.addEventListener("click", () => {
   closeFavLabelSheet();
   renderSavedOutfits();
   renderFavorites(activeFavFilter);
-  toast(`Saved to favorites ${label ? `(${label}) ` : ""}❤️`);
-});
+  toast(`Saved to favorites ${label ? `(${labelDisplay(label)}) ` : ""}❤️`);
+}
 
-$("#btn-skip-fav-label")?.addEventListener("click", () => {
-  if (!pendingFavOutfit) return;
-  const list = getFavoriteOutfits();
-  const idx = list.findIndex((f) => f.id === pendingFavOutfit.id);
-  const favObj = {
-    ...pendingFavOutfit,
-    label: "",
-    favoritedAt: Date.now(),
-  };
-  if (idx >= 0) {
-    list[idx] = favObj;
-  } else {
-    list.unshift(favObj);
-  }
-  saveFavoriteOutfits(list);
-  closeFavLabelSheet();
-  renderSavedOutfits();
-  renderFavorites(activeFavFilter);
-  toast("Saved to favorites ❤️");
-});
+$("#btn-save-fav-label")?.addEventListener("click", () => commitOutfitLabel(labelSheetSelected));
+$("#btn-skip-fav-label")?.addEventListener("click", () => commitOutfitLabel(""));
 
 // Manual outfit builder favorite button
 $("#btn-manual-fav")?.addEventListener("click", () => {
@@ -4478,6 +4547,7 @@ $("#btn-manual-fav")?.addEventListener("click", () => {
     occasion: "casual",
     createdAt: Date.now(),
     items: activePieces,
+    label: manualLabel,
   };
   promptFavoriteOutfit(outfit);
 });
@@ -4488,12 +4558,19 @@ function renderFavorites(filter = activeFavFilter) {
   const container = $("#favorites-list");
   if (!container) return;
 
-  // Filter chips
-  document.querySelectorAll("#fav-label-filters [data-fav-filter]").forEach((b) => {
-    b.classList.toggle("selected", b.dataset.favFilter.toLowerCase() === filter.toLowerCase());
-  });
-
   const list = getFavoriteOutfits();
+
+  // Filter chips: All, built-in, my labels, then any other label already on an outfit
+  const chipsBox = $("#fav-label-filters");
+  if (chipsBox) {
+    chipsBox.innerHTML = labelChipsHtml({
+      selected: filter,
+      attr: "data-fav-filter",
+      withAll: true,
+      extra: list.map((f) => f.label),
+    });
+  }
+
   const filtered = list.filter((f) => {
     if (filter === "all") return true;
     return (f.label || "").toLowerCase() === filter.toLowerCase();
@@ -4502,7 +4579,7 @@ function renderFavorites(filter = activeFavFilter) {
   if (filtered.length === 0) {
     container.innerHTML = `
       <div style="text-align:center; padding:30px 10px; color:var(--muted);">
-        <p style="font-size:14px; margin:0 0 10px;">No favorites saved${filter !== "all" ? ` under "${filter}"` : ""} yet.</p>
+        <p style="font-size:14px; margin:0 0 10px;">No favorites saved${filter !== "all" ? ` under "${escapeHtml(labelDisplay(filter))}"` : ""} yet.</p>
         <small>Tap the heart on any saved outfit or styled look to add it here.</small>
       </div>`;
     return;
@@ -4515,7 +4592,7 @@ function renderFavorites(filter = activeFavFilter) {
       <div class="fav-card-header">
         <div class="fav-card-title-group">
           <h4 class="fav-card-title">${escapeHtml(f.name)}</h4>
-          ${f.label ? `<span class="fav-card-label-tag">${escapeHtml(f.label)}</span>` : ""}
+          ${f.label ? `<span class="fav-card-label-tag">${escapeHtml(labelDisplay(f.label))}</span>` : ""}
         </div>
         <button type="button" class="fav-heart-btn active" data-unfav-id="${f.id}" title="Remove from favorites">♥</button>
       </div>
@@ -4587,9 +4664,301 @@ $("#favorites-list")?.addEventListener("click", async (e) => {
 
 // Favorites filter chips click listener
 $("#fav-label-filters")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
   const chip = e.target.closest("[data-fav-filter]");
   if (!chip) return;
   renderFavorites(chip.dataset.favFilter);
+});
+
+// =====================================================
+// Custom labels (my own outfit categories with an emoji)
+// Outfits keep storing the label name as a plain string, so built-in
+// and older labels keep working unchanged.
+// =====================================================
+const LABEL_EMOJI_PICKS = ["🏋️", "🥂", "✈️", "☕", "🎉", "🌴", "💼", "🏡"];
+
+function getCustomLabels() {
+  try {
+    const list = JSON.parse(localStorage.getItem(CUSTOM_LABELS_KEY) || "[]");
+    if (Array.isArray(list)) return list.filter((l) => l && l.id && l.name);
+  } catch {}
+  return [];
+}
+
+function saveCustomLabels(list) {
+  try {
+    localStorage.setItem(CUSTOM_LABELS_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+function findCustomLabel(name) {
+  const n = String(name || "").toLowerCase();
+  return getCustomLabels().find((l) => l.name.toLowerCase() === n) || null;
+}
+
+function labelDisplay(name) {
+  const custom = findCustomLabel(name);
+  return custom && custom.emoji ? `${custom.emoji} ${custom.name}` : String(name || "");
+}
+
+// Chip row: [All] + built-in + my labels + other labels found on outfits + [+ New label]
+function labelChipsHtml({ selected = "", attr, withAll = false, extra = [], chipClass = "chip" }) {
+  const seen = new Set();
+  const names = [];
+  const add = (n) => {
+    const v = String(n || "").trim();
+    if (v && !seen.has(v.toLowerCase())) {
+      seen.add(v.toLowerCase());
+      names.push(v);
+    }
+  };
+  BUILTIN_LABELS.forEach(add);
+  getCustomLabels().forEach((l) => add(l.name));
+  extra.forEach(add);
+
+  const sel = String(selected || "").toLowerCase();
+  const chip = (value, text) =>
+    `<button type="button" class="${chipClass} label-chip ${sel === value.toLowerCase() ? "selected" : ""}" ${attr}="${escapeHtml(value)}">${escapeHtml(text)}</button>`;
+
+  return (
+    (withAll ? chip("all", "All") : "") +
+    names.map((n) => chip(n, labelDisplay(n))).join("") +
+    `<button type="button" class="${chipClass} label-chip label-chip-new" data-open-label-manager>+ New label</button>`
+  );
+}
+
+// ---------- Create your own: label for the outfit being built ----------
+function renderManualLabelChips() {
+  const box = $("#manual-label-chips");
+  if (!box) return;
+  box.innerHTML = labelChipsHtml({
+    selected: manualLabel,
+    attr: "data-manual-label",
+    extra: manualLabel ? [manualLabel] : [],
+  });
+}
+
+$("#manual-label-chips")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
+  const chip = e.target.closest("[data-manual-label]");
+  if (!chip) return;
+  const value = chip.dataset.manualLabel;
+  manualLabel = manualLabel.toLowerCase() === value.toLowerCase() ? "" : value;
+  renderManualLabelChips();
+});
+
+// Re-render everything that shows labels
+function refreshLabelViews() {
+  renderManualLabelChips();
+  renderSavedOutfits();
+  renderFavorites(activeFavFilter);
+  if (!$("#fav-label-sheet")?.hidden) renderFavLabelPresets();
+  renderLabelManager();
+}
+
+// Rename or clear a label on every stored outfit (saved, favorites, weekly plan)
+function relabelOutfits(oldName, newName) {
+  const match = (o) => o && (o.label || "").toLowerCase() === oldName.toLowerCase();
+  let count = 0;
+
+  // Only write a list back when one of its outfits actually changed
+  const update = (list) => {
+    let changed = 0;
+    list.forEach((o) => { if (match(o)) { o.label = newName; changed++; } });
+    return changed;
+  };
+
+  const saved = getSavedOutfits();
+  const savedChanged = update(saved);
+  if (savedChanged) saveSavedOutfits(saved);
+
+  const favs = getFavoriteOutfits();
+  const favsChanged = update(favs);
+  if (favsChanged) saveFavoriteOutfits(favs);
+  count = savedChanged + favsChanged;
+
+  const plan = getWeeklyPlan();
+  if (update(Object.values(plan))) saveWeeklyPlan(plan);
+
+  if (activeFavFilter.toLowerCase() === oldName.toLowerCase()) activeFavFilter = newName || "all";
+  if (activeSavedFilter.toLowerCase() === oldName.toLowerCase()) activeSavedFilter = newName || "all";
+  if (manualLabel.toLowerCase() === oldName.toLowerCase()) manualLabel = newName;
+  if (labelSheetSelected.toLowerCase() === oldName.toLowerCase()) labelSheetSelected = newName;
+  return count;
+}
+
+function countOutfitsWithLabel(name) {
+  const n = name.toLowerCase();
+  return [...getSavedOutfits(), ...getFavoriteOutfits()].filter((o) => (o.label || "").toLowerCase() === n).length;
+}
+
+// ---------- Label manager sheet ----------
+let labelRenamingId = null;
+let labelConfirmAction = null;
+
+function openLabelManager() {
+  resetLabelForm();
+  hideLabelConfirm();
+  renderLabelManager();
+  $("#label-manager-sheet").hidden = false;
+  $("#label-manager-backdrop").hidden = false;
+  $("#label-name-input")?.focus();
+}
+
+function closeLabelManager() {
+  $("#label-manager-sheet").hidden = true;
+  $("#label-manager-backdrop").hidden = true;
+  resetLabelForm();
+  hideLabelConfirm();
+}
+
+function renderLabelManager() {
+  const picks = $("#label-emoji-picks");
+  if (picks && !picks.childElementCount) {
+    picks.innerHTML = LABEL_EMOJI_PICKS.map((em) => `<button type="button" class="label-emoji-pick" data-emoji-pick="${em}">${em}</button>`).join("");
+  }
+  const listEl = $("#label-list");
+  if (!listEl) return;
+  const labels = getCustomLabels();
+  listEl.innerHTML = labels.length
+    ? `<span class="field-label">My labels</span>` +
+      labels.map((l) => `
+        <div class="label-row">
+          <span class="label-row-name">${escapeHtml(l.emoji || "🏷️")} ${escapeHtml(l.name)}</span>
+          <button type="button" class="btn-link-action" data-label-rename="${l.id}">Rename</button>
+          <button type="button" class="btn-danger-link" data-label-delete="${l.id}">Delete</button>
+        </div>`).join("")
+    : `<p class="label-empty">No labels of your own yet. Built-in labels: ${BUILTIN_LABELS.join(", ")}.</p>`;
+}
+
+function resetLabelForm() {
+  labelRenamingId = null;
+  $("#label-emoji-input").value = "";
+  $("#label-name-input").value = "";
+  $("#label-form-title").textContent = "New label";
+  $("#label-form-submit").textContent = "Add label";
+  $("#label-form-cancel").hidden = true;
+  showLabelError("");
+}
+
+function showLabelError(msg) {
+  const el = $("#label-form-error");
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+
+function showLabelConfirm(text, okText, action) {
+  labelConfirmAction = action;
+  $("#label-confirm-text").textContent = text;
+  $("#label-confirm-ok").textContent = okText;
+  $("#label-confirm").hidden = false;
+}
+
+function hideLabelConfirm() {
+  labelConfirmAction = null;
+  $("#label-confirm").hidden = true;
+}
+
+$("#label-manager-close")?.addEventListener("click", closeLabelManager);
+$("#label-manager-backdrop")?.addEventListener("click", closeLabelManager);
+$("#label-form-cancel")?.addEventListener("click", resetLabelForm);
+$("#label-confirm-cancel")?.addEventListener("click", hideLabelConfirm);
+$("#label-confirm-ok")?.addEventListener("click", () => {
+  const action = labelConfirmAction;
+  hideLabelConfirm();
+  if (action) action();
+});
+
+$("#label-emoji-picks")?.addEventListener("click", (e) => {
+  const pick = e.target.closest("[data-emoji-pick]");
+  if (pick) $("#label-emoji-input").value = pick.dataset.emojiPick;
+});
+
+$("#label-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("#label-name-input").value.trim().replace(/\s+/g, " ");
+  const emoji = $("#label-emoji-input").value.trim() || "🏷️";
+  if (!name) return showLabelError("Give your label a short name.");
+  if (name.toLowerCase() === "all") return showLabelError("Pick a different name.");
+
+  const labels = getCustomLabels();
+  const clash =
+    BUILTIN_LABELS.some((b) => b.toLowerCase() === name.toLowerCase()) ||
+    labels.some((l) => l.id !== labelRenamingId && l.name.toLowerCase() === name.toLowerCase());
+  if (clash) return showLabelError(`You already have a "${name}" label.`);
+  showLabelError("");
+
+  if (!labelRenamingId) {
+    labels.push({ id: "label_" + Date.now(), name, emoji, createdAt: Date.now() });
+    saveCustomLabels(labels);
+    resetLabelForm();
+    refreshLabelViews();
+    toast(`Added label ${emoji} ${name}`);
+    return;
+  }
+
+  const target = labels.find((l) => l.id === labelRenamingId);
+  if (!target) return resetLabelForm();
+  const oldName = target.name;
+  const used = countOutfitsWithLabel(oldName);
+  showLabelConfirm(
+    `Rename "${target.emoji} ${oldName}" to "${emoji} ${name}"?${used ? ` ${used} outfit${used === 1 ? "" : "s"} will move to the new name.` : ""}`,
+    "Rename",
+    () => {
+      const fresh = getCustomLabels();
+      const t = fresh.find((l) => l.id === target.id);
+      if (!t) return;
+      t.name = name;
+      t.emoji = emoji;
+      saveCustomLabels(fresh);
+      if (oldName !== name) relabelOutfits(oldName, name);
+      resetLabelForm();
+      refreshLabelViews();
+      toast(`Renamed to ${emoji} ${name}`);
+    }
+  );
+});
+
+$("#label-list")?.addEventListener("click", (e) => {
+  const renameBtn = e.target.closest("[data-label-rename]");
+  if (renameBtn) {
+    const l = getCustomLabels().find((x) => x.id === renameBtn.dataset.labelRename);
+    if (!l) return;
+    hideLabelConfirm();
+    labelRenamingId = l.id;
+    $("#label-emoji-input").value = l.emoji || "";
+    $("#label-name-input").value = l.name;
+    $("#label-form-title").textContent = `Rename ${l.name}`;
+    $("#label-form-submit").textContent = "Save name";
+    $("#label-form-cancel").hidden = false;
+    showLabelError("");
+    $("#label-name-input").focus();
+    return;
+  }
+
+  const deleteBtn = e.target.closest("[data-label-delete]");
+  if (deleteBtn) {
+    const l = getCustomLabels().find((x) => x.id === deleteBtn.dataset.labelDelete);
+    if (!l) return;
+    const used = countOutfitsWithLabel(l.name);
+    showLabelConfirm(
+      `Delete "${l.emoji} ${l.name}"?${used ? ` ${used} outfit${used === 1 ? "" : "s"} will lose this label (the outfits stay).` : ""}`,
+      "Delete",
+      () => {
+        saveCustomLabels(getCustomLabels().filter((x) => x.id !== l.id));
+        relabelOutfits(l.name, "");
+        if (labelRenamingId === l.id) resetLabelForm();
+        refreshLabelViews();
+        toast(`Deleted label ${l.name}`);
+      }
+    );
+  }
 });
 
 // =====================================================
