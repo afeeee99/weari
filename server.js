@@ -585,18 +585,19 @@ const BUYCHECK_SCHEMA = {
   required: ['item_name', 'category', 'color', 'confidence'],
 };
 
-// Rotating sample items so mock mode shows every verdict
+// Rotating sample items so mock mode shows every verdict, plus an unclear photo
 const MOCK_SHOP_ITEMS = [
   { item_name: 'White linen shirt', category: 'top', color: 'white', confidence: 'high', occasions: ['casual', 'work'] },
   { item_name: 'Black leather loafers', category: 'shoes', color: 'black', confidence: 'high', occasions: ['work', 'formal'] },
   { item_name: 'Green satin slip dress', category: 'dress', color: 'green', confidence: 'high', occasions: ['party', 'wedding'] },
   { item_name: 'Beige trench coat', category: 'outerwear', color: 'beige', confidence: 'medium', occasions: ['work', 'travel'] },
+  { item_name: '', category: 'unknown', color: 'unknown', confidence: 'low', occasions: [] },
 ];
 let mockShopTurn = 0;
 
 function mockBuycheck(items) {
   const item = MOCK_SHOP_ITEMS[mockShopTurn++ % MOCK_SHOP_ITEMS.length];
-  return { ...item, ...shopCheck(item, items) };
+  return item.category === 'unknown' ? item : { ...item, ...shopCheck(item, items) };
 }
 
 // Keep only valid ids, labels and verdicts; fill gaps from the Buying Brain.
