@@ -1322,6 +1322,12 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 10px; padding: 0; }
   margin: 0;
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
+.camera-guide-hint {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12.5px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
 
 .camera-bottom-bar {
   position: relative;
