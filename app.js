@@ -953,11 +953,35 @@ const PLACEHOLDER_SHAPES = {
   dress: '<path d="M96 34 L144 34 L140 70 L176 186 L64 186 L100 70 Z"/>',
   outerwear: '<path d="M66 46 L100 36 L120 96 L140 36 L174 46 L198 168 L172 172 L166 112 L166 186 L74 186 L74 112 L68 172 L42 168 Z"/><path d="M120 96 L120 186" stroke="rgba(0,0,0,.18)" stroke-width="4" fill="none"/>',
   shoes: '<path d="M40 150 L40 118 Q60 104 92 112 L120 128 Q170 132 196 148 L200 168 L40 168 Z"/><rect x="40" y="160" width="160" height="10" rx="4" fill="rgba(0,0,0,.18)"/>',
+  skirt: '<rect x="84" y="38" width="72" height="16" rx="4"/><path d="M86 54 L154 54 L188 184 L52 184 Z"/><path d="M106 66 L94 180 M134 66 L146 180 M120 66 L120 182" stroke="rgba(0,0,0,.14)" stroke-width="4" fill="none"/>',
+  sandal: '<path d="M36 172 Q36 160 58 158 L118 160 Q160 150 194 120 L204 128 Q172 168 128 176 L60 180 Q36 182 36 172 Z"/><rect x="178" y="130" width="20" height="60" rx="4"/><path d="M60 160 Q76 128 100 160 M144 152 Q154 112 196 120 M166 104 Q186 94 204 112" stroke="currentColor" stroke-width="9" stroke-linecap="round" fill="none"/>',
   heel: '<path d="M50 132 Q90 112 130 136 Q160 150 196 150 L196 162 L132 162 Q100 150 72 162 L64 196 L54 196 L52 160 Z"/><path d="M110 126 L126 112 M140 142 L150 124" stroke="rgba(0,0,0,.25)" stroke-width="5" fill="none"/>',
   bag: '<path d="M88 92 Q88 50 120 50 Q152 50 152 92" stroke="currentColor" stroke-width="10" fill="none"/><path d="M60 92 L180 92 L168 184 L72 184 Z"/>',
   belt: '<rect x="30" y="104" width="180" height="32" rx="6"/><rect x="98" y="96" width="44" height="48" rx="6" fill="none" stroke="#c9a54a" stroke-width="8"/>',
   accessory: '<circle cx="120" cy="120" r="54"/><circle cx="120" cy="120" r="24" fill="#f4f1ec"/>',
 };
+
+// Pick the drawing that matches an item's name, e.g. a "midi skirt" gets a skirt, not trousers
+const PLACEHOLDER_KEYWORDS = [
+  [/\bskirts?\b/, "skirt"],
+  [/\bsandals?\b/, "sandal"],
+  [/\b(heels?|pumps?|stilettos?)\b/, "heel"],
+  [/\b(tote|bag|handbag|clutch|purse|backpack)\b/, "bag"],
+  [/\bbelt\b/, "belt"],
+];
+
+function placeholderKind(item) {
+  const name = String((item && (item.name || item.itemName || item.title)) || "").toLowerCase();
+  const match = PLACEHOLDER_KEYWORDS.find(([re]) => re.test(name));
+  return match ? match[1] : undefined;
+}
+
+// Uploaded photos are kept; generated drawings are redrawn to match the item's name
+function itemIllustration(item, fallbackPhoto) {
+  const photo = fallbackPhoto || "";
+  if (photo && !photo.startsWith("data:image/svg+xml")) return photo;
+  return placeholderImage(item.category, item.color, placeholderKind(item));
+}
 
 function placeholderImage(category, color, kind) {
   const fill = colorHex(color);
@@ -3929,7 +3953,7 @@ async function renderMyRewear() {
       type: l.type,
       listing: l,
       name: l.title || l.itemName || (it ? describe(it) : "Removed item"),
-      photo: it ? it.photo : placeholderImage(l.category, l.color),
+      photo: it ? itemIllustration(it, it.photo) : itemIllustration(l),
       meta: l.type === "sell" ? formatLkr(l.price) : l.center || "",
     });
     seen.add(l.itemId);
@@ -3938,7 +3962,7 @@ async function renderMyRewear() {
     if (seen.has(it.id)) continue;
     const st = getRewearStatus(it, listings, requests);
     if (!st || st.type !== "swap") continue;
-    rows.push({ key: it.id, status: st.status, type: "swap", name: describe(it), photo: it.photo, meta: "Swap feed" });
+    rows.push({ key: it.id, status: st.status, type: "swap", name: describe(it), photo: itemIllustration(it, it.photo), meta: "Open to swaps" });
   }
 
   const list = $("#my-rewear-list");
