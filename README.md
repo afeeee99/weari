@@ -68,7 +68,7 @@ weari/
 ├── server/               Node + Express server: serves the app, talks to Gemini
 │   └── routes/           One file per AI feature (tag, style, review, chat, buycheck, listing)
 ├── firebase/             Firestore + Storage security rules
-├── public/               Icons and the web-app manifest
+├── public/               Logo (brand/), app icons (icons/) and the web-app manifest
 └── docs/                 Guides: architecture, Firebase setup, mobile app
 ```
 

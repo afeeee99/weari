@@ -129,13 +129,11 @@
 }
 
 /* Welcome Step */
-.ob-brand-tag {
-  font-size: 13px;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--ob-cognac);
-  font-weight: 600;
-  margin-bottom: 24px;
+.ob-brand-logo {
+  display: block;
+  width: min(220px, 60vw);
+  height: auto;
+  margin: 0 0 28px;
 }
 
 .ob-hero-title {

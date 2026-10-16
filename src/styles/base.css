@@ -71,7 +71,9 @@ button { font: inherit; cursor: pointer; }
   backdrop-filter: blur(12px);
   box-sizing: border-box;
 }
-.logo { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.04em; }
+/* The logo artwork lives in public/brand/ (weari-mark.svg = hanger + name, weari-logo.svg adds the tagline) */
+.brand-mark { display: block; width: auto; height: 100%; }
+.logo { margin: 0; height: 40px; line-height: 0; }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
 .karma-chip {
   display: inline-flex; align-items: center; gap: 5px;

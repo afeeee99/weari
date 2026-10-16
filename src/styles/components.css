@@ -66,7 +66,7 @@
 .auth-sheet { position: relative; max-width: 420px; margin: 0 auto; padding-top: 4px; }
 .auth-close { position: absolute; top: -4px; right: -6px; }
 .auth-head { text-align: center; margin-bottom: 20px; }
-.auth-logo { font-family: var(--font-serif); font-size: 28px; font-weight: 700; letter-spacing: -0.04em; }
+.auth-logo { height: 48px; margin: 0 auto 6px; }
 .auth-head h3 { margin: 6px 0 6px; font-size: 20px; letter-spacing: -0.01em; }
 .auth-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
 .btn-google {

@@ -263,7 +263,7 @@ export function openAuthSheet(mode = "signin") {
     <div class="auth-sheet">
       <button type="button" class="btn-detail-close auth-close" aria-label="Close" data-close-sheet>✕</button>
       <div class="auth-head">
-        <div class="auth-logo">weari</div>
+        <img class="auth-logo brand-mark" src="/brand/weari-mark.svg" alt="Weari" width="936" height="576" />
         <h3>${copy.title}</h3>
         <p>${mode === "reset" ? "We’ll email you a link to choose a new password." : "Keep your closet on every device and swap with the community."}</p>
       </div>
