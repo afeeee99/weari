@@ -3724,3 +3724,56 @@ legend { font-weight: 600; font-size: 15px; margin-bottom: 10px; padding: 0; }
 .rewear-row-info strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rewear-row-info small { font-size: 12px; color: var(--muted); }
 
+/* ---------- Swap: one big card at a time ---------- */
+.swap-demo-note {
+  margin: 0 0 12px; padding: 8px 12px;
+  background: #fff7e6; border: 1px solid #f3dfb2; border-radius: 12px;
+  color: #7a5a12; font-size: 12.5px; font-weight: 600;
+}
+.swap-deck { position: relative; }
+.swap-card {
+  --like: 0; --skip: 0;
+  position: relative;
+  background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+  overflow: hidden; box-shadow: 0 6px 20px rgba(0,0,0,0.07);
+  touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab;
+  transition: transform 0.26s ease;
+}
+.swap-card.dragging { transition: none; cursor: grabbing; }
+.swap-card-media { position: relative; }
+.swap-card-media img {
+  display: block; width: 100%;
+  aspect-ratio: 1; max-height: 46vh; max-height: 46dvh;
+  object-fit: contain; background: #f4f1ec; pointer-events: none;
+}
+.swap-card .card-body { padding: 14px 16px 16px; }
+.swap-card .listing-title { font-size: 18px; }
+.swap-stamp {
+  position: absolute; top: 18px; padding: 4px 12px;
+  border: 3px solid; border-radius: 10px;
+  font-size: 22px; font-weight: 800; letter-spacing: 0.06em; background: rgba(255,255,255,0.85);
+  pointer-events: none;
+}
+.swap-stamp-like { right: 16px; color: var(--swap); transform: rotate(12deg); opacity: var(--like); }
+.swap-stamp-skip { left: 16px; color: #c0392b; transform: rotate(-12deg); opacity: var(--skip); }
+.swap-deck-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px;
+}
+.swap-deck-btn {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 12px 22px; border-radius: 999px; font-size: 16px; font-weight: 700;
+  border: 1px solid var(--line); background: var(--card);
+}
+.swap-deck-btn span { font-size: 14px; }
+.swap-deck-btn.skip { color: #c0392b; }
+.swap-deck-btn.like { background: var(--swap); border-color: var(--swap); color: #fff; }
+.swap-deck-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.swap-waiting { font-size: 14px; color: var(--muted); }
+.swap-chat-log {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 40vh; max-height: 40dvh; overflow-y: auto; margin-bottom: 12px;
+}
+.swap-chat-form { display: flex; gap: 8px; align-items: center; }
+.swap-chat-form .text-input { flex: 1; min-width: 0; }
+

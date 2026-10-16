@@ -562,6 +562,11 @@ function normalizeRequest(raw) {
     status: raw.status || "pending",
     createdAt: Number(raw.createdAt || raw.created_at) || Date.now(),
     listing: raw.listing || null,
+    // Demo swap fields (simulated acceptance and chat); absent on older requests
+    ...(raw.demo && { demo: true }),
+    ...(raw.acceptedAt && { acceptedAt: Number(raw.acceptedAt) }),
+    ...(raw.offeredName && { offeredName: String(raw.offeredName) }),
+    ...(Array.isArray(raw.messages) && { messages: raw.messages }),
   };
 }
 
@@ -1679,6 +1684,7 @@ const SAVED_OUTFITS_KEY = "weari_saved_outfits";
 const CUSTOM_LABELS_KEY = "weari_custom_labels";
 const BUILTIN_LABELS = ["Work", "Gym", "Weekend"];
 let manualLabel = "";
+let stylistLabel = ""; // label for the current Stylist suggestion
 let activeSavedFilter = "all";
 
 function getSavedOutfits() {
@@ -2349,12 +2355,18 @@ async function showSuggestion(forcedItemId = null) {
           ? `<div class="outfit-explanation"><p>${escapeHtml(result.explanation)}</p></div>`
           : ""
       }
+      <div class="field-group stylist-label-group">
+        <span class="field-label">Label <span class="hint">(optional)</span></span>
+        <div class="label-chip-row" id="stylist-label-chips"></div>
+      </div>
       <button id="wore-outfit" class="btn-primary btn-block" style="margin-bottom: 8px;">✓ I wore this outfit</button>
       <div style="display:flex; gap:8px; margin-bottom:8px;">
         <button id="btn-fav-suggested" type="button" class="btn-secondary" style="flex:1;">♥ Favorite look</button>
         <button id="btn-save-suggested" type="button" class="btn-secondary" style="flex:1;">💾 Save look</button>
       </div>
       <button id="try-another" class="btn-secondary btn-block">↻ Try another</button>`;
+    stylistLabel = "";
+    renderStylistLabelChips();
     box.classList.remove("fade-in");
     void box.offsetWidth; // restart the fade animation
     box.classList.add("fade-in");
@@ -2393,6 +2405,18 @@ $("#style-result").addEventListener("click", async (e) => {
     return;
   }
 
+  if (e.target.closest("#stylist-label-chips [data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
+  const labelChip = e.target.closest("[data-stylist-label]");
+  if (labelChip) {
+    const value = labelChip.dataset.stylistLabel;
+    stylistLabel = stylistLabel.toLowerCase() === value.toLowerCase() ? "" : value;
+    renderStylistLabelChips();
+    return;
+  }
+
   const favBtn = e.target.closest("#btn-fav-suggested") || e.target.closest("#btn-fav-suggested-header");
   if (favBtn && currentSuggestedOutfit && currentSuggestedOutfit.length) {
     const outfit = {
@@ -2401,6 +2425,7 @@ $("#style-result").addEventListener("click", async (e) => {
       occasion: styleOccasion || "casual",
       createdAt: Date.now(),
       items: currentSuggestedOutfit.map((p) => p.item),
+      label: stylistLabel,
     };
     promptFavoriteOutfit(outfit);
     return;
@@ -2414,6 +2439,7 @@ $("#style-result").addEventListener("click", async (e) => {
       occasion: styleOccasion || "casual",
       createdAt: Date.now(),
       items: currentSuggestedOutfit.map((p) => p.item),
+      label: stylistLabel,
     };
     const list = getSavedOutfits();
     list.unshift(outfit);
@@ -3030,6 +3056,9 @@ $("#saved-for-later")?.addEventListener("click", (e) => {
 // =====================================================
 const REQUESTS_KEY = "weari-swap-requests";
 let swapTab = "feed";
+// Swipe deck: listings skipped this visit (kept in memory only, no storage key)
+const swapSkipped = new Set();
+const SWAP_DEMO_ACCEPT_MS = 2000;
 
 // Swap requests are small, so they're kept in localStorage
 function getRequests() {
@@ -3081,6 +3110,7 @@ document.querySelector("#swap-tabs").addEventListener("click", (e) => {
 
 async function renderSwap() {
   const [listings, items] = await Promise.all([getSwapListings(), getAllItems()]);
+  acceptDueDemoRequests();
   const requests = getRequests();
   const mine = items.filter((it) => it.swappable);
 
@@ -3096,30 +3126,42 @@ async function renderSwap() {
   $("#swap-listings").hidden = swapTab !== "listings";
   $("#swap-requests").hidden = swapTab !== "requests";
 
-  // --- Feed ---
+  // --- Feed: one big card at a time ---
   const requested = new Set(requests.map((r) => r.listingId));
-  $("#swap-feed").innerHTML = listings
-    .map(
-      (l) => `
-      <article class="card">
-        <img src="${l.photo}" alt="${l.title}" loading="lazy" />
-        <span class="member-badge"><span class="avatar">${l.member[0]}</span>${l.member}</span>
-        <div class="card-body">
-          <div class="listing-title">${l.title}</div>
-          <div class="card-top">
-            <span class="dot" style="background:${colorHex(l.color)}"></span>
-            <span class="card-meta">${describe(l)}</span>
+  const deck = listings.filter((l) => !requested.has(l.id) && !swapSkipped.has(l.id));
+  const top = deck[0];
+  $("#swap-feed").innerHTML = top
+    ? `
+      <p class="swap-demo-note">Demo: sample community pieces. Requests and replies are simulated.</p>
+      <div class="swap-deck">
+        <article class="swap-card" id="swap-card" data-swap-card="${top.id}">
+          <div class="swap-card-media">
+            <img src="${top.photo}" alt="${escapeHtml(top.title)}" draggable="false" />
+            <span class="member-badge"><span class="avatar">${top.member[0]}</span>${top.member}</span>
+            <span class="swap-stamp swap-stamp-like">LIKE</span>
+            <span class="swap-stamp swap-stamp-skip">SKIP</span>
           </div>
-          ${tagsHtml(l.occasions)}
-          ${
-            requested.has(l.id)
-              ? `<button class="btn-small done" disabled>✓ Requested</button>`
-              : `<button class="btn-small" data-interested="${l.id}">I’m interested</button>`
-          }
-        </div>
-      </article>`
-    )
-    .join("");
+          <div class="card-body">
+            <div class="listing-title">${escapeHtml(top.title)}</div>
+            <div class="card-top">
+              <span class="dot" style="background:${colorHex(top.color)}"></span>
+              <span class="card-meta">${describe(top)}</span>
+            </div>
+            ${tagsHtml(top.occasions)}
+          </div>
+        </article>
+      </div>
+      <div class="swap-deck-actions">
+        <button type="button" class="swap-deck-btn skip" data-swap-skip="${top.id}" aria-label="Skip">✕ <span>Skip</span></button>
+        <span class="swap-deck-count">${listings.length - deck.length + 1} of ${listings.length}</span>
+        <button type="button" class="swap-deck-btn like" data-swap-like="${top.id}" aria-label="Like and request a swap">♥ <span>Like</span></button>
+      </div>`
+    : `<div class="notice">
+        <div class="notice-icon">✨</div>
+        <p>You’ve seen every piece for now.</p>
+        ${swapSkipped.size ? `<button class="btn-secondary" data-swap-reset>See skipped pieces again</button>` : `<button class="btn-secondary" data-swap-goto="requests">View my requests</button>`}
+      </div>`;
+  bindSwapCardDrag();
 
   // --- My listings ---
   $("#swap-listings").innerHTML = mine.length
@@ -3156,8 +3198,9 @@ async function renderSwap() {
               <div class="request-text">Your <strong>${offered ? describe(offered) : "removed item"}</strong>
                 for ${(theirs.member || "member")}’s <strong>${(theirs.title || "item")}</strong></div>
               <div class="request-meta">
-                <span class="status ${r.status === 'completed' ? 'status-completed' : ''}">${r.status === 'completed' ? '✓ Completed' : 'Pending'}</span>
+                <span class="status ${r.status === 'completed' || r.status === 'accepted' ? 'status-completed' : ''}">${r.status === 'completed' ? '✓ Completed' : r.status === 'accepted' ? '✓ Accepted (demo)' : 'Pending'}</span>
                 <span>${new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                ${r.status === 'accepted' ? `<button class="link-btn" data-open-swap-chat="${r.id}">Open chat</button>` : ''}
                 ${r.status !== 'completed' ? `<button class="link-btn" data-complete-request="${r.id}">Mark completed</button>` : ''}
                 <button class="link-btn" data-cancel-request="${r.id}">Cancel</button>
               </div>
@@ -3180,6 +3223,18 @@ document.querySelector("#screen-swap").addEventListener("click", (e) => {
   }
   const interested = e.target.closest("[data-interested]");
   if (interested) openOfferSheet(interested.dataset.interested);
+
+  const like = e.target.closest("[data-swap-like]");
+  if (like) return swipeSwapCard("right");
+  const skip = e.target.closest("[data-swap-skip]");
+  if (skip) return swipeSwapCard("left");
+  if (e.target.closest("[data-swap-reset]")) {
+    swapSkipped.clear();
+    renderSwap();
+    return;
+  }
+  const chatBtn = e.target.closest("[data-open-swap-chat]");
+  if (chatBtn) return openSwapChat(chatBtn.dataset.openSwapChat);
 
   const complete = e.target.closest("[data-complete-request]");
   if (complete) {
@@ -3333,17 +3388,20 @@ $("#sheet").addEventListener("click", async (e) => {
 
   if (e.target.closest("#send-request") && offerChoice) {
     const { photo, ...listing } = offerFor || {};
+    const requestId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
     saveRequests([
       ...getRequests(),
       {
-        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        id: requestId,
         listingId: offerFor ? offerFor.id : "",
         listing,
         offeredItemId: offerChoice,
         status: "pending",
+        demo: true, // simulated: accepted automatically after 2 seconds
         createdAt: Date.now(),
       },
     ]);
+    setTimeout(() => acceptDemoRequest(requestId), SWAP_DEMO_ACCEPT_MS);
     awardKarma(KARMA_CONFIG.POINTS.SEND_SWAP_REQUEST, "Sent swap request");
     unlockBadge("first_swap_request");
     openSheet(`
@@ -3351,10 +3409,166 @@ $("#sheet").addEventListener("click", async (e) => {
         <div class="success-icon">🎉</div>
         <h3>Swap request sent!</h3>
         <p>Your offer for ${offerFor ? offerFor.member : "community member"}’s ${offerFor ? offerFor.title : "item"} is saved in <strong>My requests</strong>.</p>
+        <p class="swap-waiting" data-waiting-request="${requestId}">⏳ Waiting for a reply… <small>(demo)</small></p>
         <button class="btn-primary btn-block" data-close-sheet>Done</button>
       </div>`);
     renderSwap();
   }
+});
+
+// ---------- Swipe deck: drag right to like, left to skip ----------
+const SWIPE_THRESHOLD = 90;
+
+function bindSwapCardDrag() {
+  const card = $("#swap-card");
+  if (!card) return;
+  let startX = 0;
+  let dx = 0;
+  let dragging = false;
+
+  card.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    startX = e.clientX;
+    dx = 0;
+    card.setPointerCapture(e.pointerId);
+    card.classList.add("dragging");
+  });
+  card.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    dx = e.clientX - startX;
+    card.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
+    card.style.setProperty("--like", Math.max(0, Math.min(1, dx / SWIPE_THRESHOLD)));
+    card.style.setProperty("--skip", Math.max(0, Math.min(1, -dx / SWIPE_THRESHOLD)));
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    card.classList.remove("dragging");
+    if (dx > SWIPE_THRESHOLD) return swipeSwapCard("right");
+    if (dx < -SWIPE_THRESHOLD) return swipeSwapCard("left");
+    resetSwapCard(card);
+  };
+  card.addEventListener("pointerup", end);
+  card.addEventListener("pointercancel", end);
+}
+
+function resetSwapCard(card) {
+  card.style.transform = "";
+  card.style.setProperty("--like", 0);
+  card.style.setProperty("--skip", 0);
+}
+
+function swipeSwapCard(direction) {
+  const card = $("#swap-card");
+  if (!card || card.classList.contains("flying")) return;
+  const id = card.dataset.swapCard;
+  card.classList.add("flying");
+  card.style.setProperty(direction === "right" ? "--like" : "--skip", 1);
+  card.style.transform = `translateX(${direction === "right" ? 140 : -140}%) rotate(${direction === "right" ? 18 : -18}deg)`;
+  setTimeout(() => {
+    if (direction === "left") {
+      swapSkipped.add(id);
+      renderSwap();
+      return;
+    }
+    // Liked: the card comes back until a request is actually sent
+    card.classList.remove("flying");
+    resetSwapCard(card);
+    openOfferSheet(id);
+  }, 260);
+}
+
+// ---------- Simulated reply: accepted after 2 seconds, then a demo chat ----------
+function swapChatOpener(r) {
+  const offered = r.offeredName || "your piece";
+  const title = (r.listing && r.listing.title) || "my piece";
+  return `Hi! I’d love to swap my ${title} for ${offered}. Could we meet up this weekend? 😊`;
+}
+
+function markDemoAccepted(r, offeredName) {
+  r.status = "accepted";
+  r.acceptedAt = Date.now();
+  r.offeredName = r.offeredName || offeredName || "";
+  if (!Array.isArray(r.messages) || !r.messages.length) {
+    r.messages = [{ from: "them", text: swapChatOpener(r), at: Date.now() }];
+  }
+}
+
+async function acceptDemoRequest(requestId) {
+  const items = await getAllItems();
+  const list = getRequests();
+  const r = list.find((x) => x.id === requestId);
+  if (!r || !r.demo || r.status !== "pending") return;
+  const offered = items.find((it) => it.id === r.offeredItemId);
+  markDemoAccepted(r, offered ? `your ${describe(offered)}` : "");
+  saveRequests(list);
+
+  const member = (r.listing && r.listing.member) || "They";
+  const waiting = document.querySelector(`#sheet:not([hidden]) [data-waiting-request="${requestId}"]`);
+  if (waiting) openSwapChat(requestId);
+  else toast(`${member} accepted your swap (demo) 💬`);
+  if (!$("#screen-swap").hidden) renderSwap();
+}
+
+// Demo requests whose timer was lost (e.g. the page reloaded) are accepted on the next visit
+function acceptDueDemoRequests() {
+  const list = getRequests();
+  let changed = false;
+  for (const r of list) {
+    if (r.demo && r.status === "pending" && Date.now() - r.createdAt >= SWAP_DEMO_ACCEPT_MS) {
+      markDemoAccepted(r);
+      changed = true;
+    }
+  }
+  if (changed) saveRequests(list);
+}
+
+let swapChatId = null;
+
+async function openSwapChat(requestId) {
+  const r = getRequests().find((x) => x.id === requestId);
+  if (!r) return;
+  swapChatId = requestId;
+  const listings = await getSwapListings();
+  const theirs = listings.find((l) => l.id === r.listingId) || r.listing || {};
+  const member = theirs.member || "Community member";
+  const messages = Array.isArray(r.messages) ? r.messages : [];
+
+  openSheet(`
+    <div class="sheet-header">
+      ${theirs.photo ? `<img src="${theirs.photo}" alt="" />` : ""}
+      <div>
+        <h3>Chat with ${escapeHtml(member)}</h3>
+        <p>About the ${escapeHtml(theirs.title || "swap")}</p>
+      </div>
+    </div>
+    <p class="swap-demo-note">Demo chat: ${escapeHtml(member)} is a sample member and messages are not sent to anyone.</p>
+    <div class="swap-chat-log" id="swap-chat-log">
+      ${messages
+        .map((m) => `<div class="chat-row ${m.from === "me" ? "user" : "stylist"}"><div class="chat-bubble ${m.from === "me" ? "user" : "stylist"}">${escapeHtml(m.text)}</div></div>`)
+        .join("")}
+    </div>
+    <form class="swap-chat-form" id="swap-chat-form" autocomplete="off">
+      <input type="text" id="swap-chat-input" class="text-input" placeholder="Write a message" maxlength="300" />
+      <button type="submit" class="chat-send-btn" aria-label="Send">↑</button>
+    </form>
+    <button class="link-btn sheet-cancel" data-close-sheet>Close</button>`);
+  const log = $("#swap-chat-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+$("#sheet").addEventListener("submit", (e) => {
+  if (e.target.id !== "swap-chat-form") return;
+  e.preventDefault();
+  const input = $("#swap-chat-input");
+  const text = input.value.trim();
+  if (!text || !swapChatId) return;
+  const list = getRequests();
+  const r = list.find((x) => x.id === swapChatId);
+  if (!r) return;
+  r.messages = [...(Array.isArray(r.messages) ? r.messages : []), { from: "me", text, at: Date.now() }];
+  saveRequests(list);
+  openSwapChat(swapChatId).then(() => $("#swap-chat-input")?.focus());
 });
 
 // =====================================================
@@ -5160,9 +5374,21 @@ $("#manual-label-chips")?.addEventListener("click", (e) => {
   renderManualLabelChips();
 });
 
+// ---------- Stylist: label for the suggested look ----------
+function renderStylistLabelChips() {
+  const box = $("#stylist-label-chips");
+  if (!box) return;
+  box.innerHTML = labelChipsHtml({
+    selected: stylistLabel,
+    attr: "data-stylist-label",
+    extra: stylistLabel ? [stylistLabel] : [],
+  });
+}
+
 // Re-render everything that shows labels
 function refreshLabelViews() {
   renderManualLabelChips();
+  renderStylistLabelChips();
   renderSavedOutfits();
   renderFavorites(activeFavFilter);
   if (!$("#fav-label-sheet")?.hidden) renderFavLabelPresets();
@@ -5196,6 +5422,7 @@ function relabelOutfits(oldName, newName) {
   if (activeFavFilter.toLowerCase() === oldName.toLowerCase()) activeFavFilter = newName || "all";
   if (activeSavedFilter.toLowerCase() === oldName.toLowerCase()) activeSavedFilter = newName || "all";
   if (manualLabel.toLowerCase() === oldName.toLowerCase()) manualLabel = newName;
+  if (stylistLabel.toLowerCase() === oldName.toLowerCase()) stylistLabel = newName;
   if (labelSheetSelected.toLowerCase() === oldName.toLowerCase()) labelSheetSelected = newName;
   return count;
 }
