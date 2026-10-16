@@ -1,10 +1,13 @@
+import { kv } from "../../core/kv.js";
+
 // =====================================================
-// Weari stylist — powered by Gemini API
+// Basic-rules stylist — used when Gemini isn't available
+// (offline, no API key, or the server is busy)
 // =====================================================
 
-function getOnboardingPreferences() {
+export function getOnboardingPreferences() {
   try {
-    const raw = localStorage.getItem("weari_onboarding_answers");
+    const raw = kv.getItem("weari_onboarding_answers");
     if (!raw) return null;
     const data = JSON.parse(raw);
     return {
@@ -17,7 +20,7 @@ function getOnboardingPreferences() {
   }
 }
 
-async function suggestOutfit(items, occasion, previousIds = [], mustIncludeItemId = null) {
+export async function suggestOutfit(items, occasion, previousIds = [], mustIncludeItemId = null) {
   if (!items || items.length === 0) {
     return { missing: "Your wardrobe is empty. Add pieces first to get an outfit suggestion." };
   }

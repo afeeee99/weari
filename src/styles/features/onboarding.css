@@ -1,0 +1,395 @@
+/* First-time onboarding flow */
+
+/* =====================================================
+   ONBOARDING FLOW
+   Palette:
+   - Cream background: #FDFCF9
+   - Warm black text: #1A1816
+   - Soft taupe: #B8AFA4
+   - Sage mist: #C9D1C8
+   - Cognac: #A0522D
+   Typography:
+   - Elegant serif headlines: 'Playfair Display', 'Cormorant Garamond', Georgia, serif
+===================================================== */
+:root {
+  --ob-bg: #FDFCF9;
+  --ob-text: #1A1816;
+  --ob-taupe: #B8AFA4;
+  --ob-sage: #C9D1C8;
+  --ob-cognac: #A0522D;
+  --ob-serif: "Playfair Display", "Cormorant Garamond", Georgia, serif;
+}
+
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background-color: var(--ob-bg);
+  color: var(--ob-text);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  animation: fade 0.25s ease;
+}
+
+.onboarding-shell {
+  max-width: 520px;
+  min-height: 100vh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: calc(16px + env(safe-area-inset-top)) 24px calc(36px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.onboarding-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0 20px;
+  min-height: 44px;
+}
+
+.ob-btn-back {
+  background: transparent;
+  border: none;
+  color: var(--ob-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 8px 4px;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+.ob-btn-back:hover {
+  opacity: 1;
+}
+
+.ob-progress-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.ob-progress-track {
+  width: 100%;
+  max-width: 180px;
+  height: 4px;
+  background: rgba(184, 175, 164, 0.35);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ob-progress-fill {
+  height: 100%;
+  background: var(--ob-cognac);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.ob-step-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ob-taupe);
+  text-transform: uppercase;
+}
+
+.ob-btn-skip {
+  background: transparent;
+  border: none;
+  color: var(--ob-taupe);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 8px 4px;
+  transition: color 0.15s ease;
+}
+.ob-btn-skip:hover {
+  color: var(--ob-text);
+}
+
+.onboarding-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px 0 40px;
+}
+
+.ob-step-view {
+  display: flex;
+  flex-direction: column;
+  animation: fade 0.25s ease;
+}
+
+/* Welcome Step */
+.ob-brand-tag {
+  font-size: 13px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ob-cognac);
+  font-weight: 600;
+  margin-bottom: 24px;
+}
+
+.ob-hero-title {
+  font-family: var(--ob-serif);
+  font-size: clamp(34px, 8vw, 44px);
+  line-height: 1.15;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--ob-text);
+  margin: 0 0 18px;
+}
+
+.ob-hero-desc {
+  font-size: 17px;
+  line-height: 1.55;
+  color: #4a453e;
+  margin: 0 0 48px;
+  max-width: 420px;
+}
+
+.ob-welcome-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.ob-btn-primary {
+  width: 100%;
+  background: var(--ob-cognac);
+  color: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 16px 28px;
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(160, 82, 45, 0.2);
+  transition: all 0.18s ease;
+}
+.ob-btn-primary:hover:not(:disabled) {
+  opacity: 0.94;
+  transform: translateY(-1px);
+}
+.ob-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.ob-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.ob-btn-link {
+  background: transparent;
+  border: none;
+  color: var(--ob-taupe);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 8px;
+  text-align: center;
+  transition: color 0.15s ease;
+}
+.ob-btn-link:hover {
+  color: var(--ob-text);
+}
+
+/* Quiz questions */
+.ob-question {
+  font-family: var(--ob-serif);
+  font-size: clamp(26px, 6vw, 32px);
+  line-height: 1.22;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--ob-text);
+  margin: 0 0 10px;
+}
+
+.ob-instruction {
+  font-size: 13.5px;
+  color: var(--ob-taupe);
+  margin: 0 0 26px;
+  font-weight: 500;
+}
+
+.ob-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.ob-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.ob-option-card {
+  min-height: 56px;
+  background: #ffffff;
+  border: 1.5px solid rgba(184, 175, 164, 0.45);
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.ob-option-card:hover {
+  border-color: var(--ob-taupe);
+  background: #faf8f5;
+}
+.ob-option-card.selected {
+  border-color: var(--ob-cognac);
+  background: rgba(160, 82, 45, 0.07);
+  box-shadow: 0 2px 8px rgba(160, 82, 45, 0.12);
+}
+
+.ob-option-text {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ob-text);
+  line-height: 1.35;
+}
+.ob-option-card.selected .ob-option-text {
+  font-weight: 600;
+  color: var(--ob-cognac);
+}
+
+.ob-action-btn {
+  margin-top: 32px;
+}
+
+/* Starter Closet Checklist */
+.ob-checklist-container {
+  background: #ffffff;
+  border: 1.5px solid rgba(184, 175, 164, 0.4);
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin: 24px 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.ob-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(184, 175, 164, 0.2);
+}
+.ob-checklist-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.ob-check-box {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ob-taupe);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+.ob-checklist-item.checked .ob-check-box {
+  background: var(--ob-cognac);
+  border-color: var(--ob-cognac);
+}
+.ob-checklist-item.checked .ob-check-box::after {
+  content: "✓";
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ob-check-name {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ob-text);
+}
+.ob-checklist-item.checked .ob-check-name {
+  color: var(--ob-cognac);
+  font-weight: 600;
+}
+
+.ob-ready-panel {
+  background: rgba(201, 209, 200, 0.3);
+  border: 1px solid var(--ob-sage);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 20px;
+  animation: pop 0.25s ease;
+}
+
+.ob-ready-message {
+  font-family: var(--ob-serif);
+  font-size: 21px;
+  font-weight: 500;
+  color: var(--ob-text);
+  margin: 0 0 16px;
+}
+
+.ob-starter-btn-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.ob-btn-secondary {
+  flex: 1;
+  background: #ffffff;
+  border: 1.5px solid var(--ob-cognac);
+  color: var(--ob-cognac);
+  border-radius: 999px;
+  padding: 13px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.ob-btn-secondary:hover {
+  background: rgba(160, 82, 45, 0.05);
+}
+
+.ob-demo-row {
+  text-align: center;
+  margin-top: 10px;
+}
+
+.ob-link-demo {
+  background: transparent;
+  border: none;
+  color: var(--ob-taupe);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 8px;
+  transition: color 0.15s ease;
+}
+.ob-link-demo:hover {
+  color: var(--ob-cognac);
+}

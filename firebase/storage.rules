@@ -1,0 +1,19 @@
+rules_version = '2';
+
+// =====================================================
+// Who can upload and view photos in Firebase Storage.
+// Deploy with:  npx firebase-tools deploy --only storage
+// =====================================================
+service firebase.storage {
+  match /b/{bucket}/o {
+    // users/{uid}/photos/{hash}.jpg — only the owner uploads; signed-in members can view
+    // (swap listings show other members' photos)
+    match /users/{uid}/photos/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

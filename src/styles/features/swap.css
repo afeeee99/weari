@@ -1,0 +1,61 @@
+/* Swap (Rewear) screen */
+
+/* ---------- Swap (Rewear) ---------- */
+.subtitle { display: block; font-size: 14px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-top: 2px; }
+
+.segmented {
+  display: flex; gap: 4px; padding: 4px; margin-bottom: 16px;
+  background: var(--accent-soft); border-radius: 999px;
+}
+.seg {
+  flex: 1; border: none; background: none; color: var(--muted);
+  padding: 9px 6px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.seg.active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.seg-count {
+  display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px;
+  border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; line-height: 18px;
+}
+
+.member-badge {
+  position: absolute; top: 8px; left: 8px;
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.92); backdrop-filter: blur(6px);
+  padding: 3px 10px 3px 3px; border-radius: 999px; font-size: 12px; font-weight: 600;
+}
+.avatar {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+}
+.listing-title { font-weight: 600; font-size: 14px; line-height: 1.3; margin-bottom: 6px; }
+.card-meta { font-size: 13px; color: var(--muted); text-transform: capitalize; }
+
+.btn-small {
+  width: 100%; margin-top: 10px;
+  background: var(--accent); color: #fff; border: none; border-radius: 999px;
+  padding: 9px 12px; font-size: 13px; font-weight: 600;
+}
+.btn-small.done { background: var(--accent-soft); color: var(--swap); cursor: default; }
+
+.link-btn { background: none; border: none; color: var(--muted); font-size: 13px; text-decoration: underline; padding: 0; }
+
+/* My requests */
+.request {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--card); border-radius: var(--radius); padding: 12px; margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
+}
+.request-pics { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.request-pics img, .pic-gone {
+  width: 52px; height: 68px; object-fit: cover; border-radius: 10px; background: var(--accent-soft);
+}
+.swap-arrow { color: var(--muted); font-size: 16px; }
+.request-info { min-width: 0; }
+.request-text { font-size: 14px; line-height: 1.4; }
+.request-text strong { text-transform: capitalize; }
+.request-meta { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.status {
+  background: #fdf3dc; color: #a26b00; font-weight: 600;
+  padding: 2px 8px; border-radius: 999px;
+}

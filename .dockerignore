@@ -1,7 +1,11 @@
 # Keep secrets and local-only files out of the Cloud Run image
 .env
 .env.*
+!.env.example
 .dev.env.json
 node_modules
+dist
 .git
 .DS_Store
+.firebase
+docs

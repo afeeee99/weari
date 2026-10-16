@@ -1,0 +1,63 @@
+rules_version = '2';
+
+// =====================================================
+// Who can read and write what in Firestore.
+// Deploy with:  npx firebase-tools deploy --only firestore:rules
+// =====================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isUser(uid) { return signedIn() && request.auth.uid == uid; }
+    function text(v, max) { return v is string && v.size() <= max; }
+    // Photos are Storage URLs, small SVG drawings, or (without a Storage bucket) small inline JPEGs
+    function photo(v) { return v is string && v.size() <= 600000; }
+    function category(v) { return v in ['top', 'bottom', 'dress', 'shoes', 'outerwear', 'accessory']; }
+
+    // Each person's wardrobe, outfits, karma and settings: only they can see or change them
+    match /users/{uid} {
+      allow read, write: if isUser(uid);
+      match /{document=**} {
+        allow read, write: if isUser(uid);
+      }
+    }
+
+    // Community swap listings: every signed-in member can browse;
+    // only the owner can add, change or remove their own (id = "{uid}_{itemId}")
+    match /listings/{listingId} {
+      allow read: if signedIn();
+      allow delete: if signedIn() && listingId.matches(request.auth.uid + '_.+');
+      allow create, update: if signedIn()
+        && listingId == request.auth.uid + '_' + request.resource.data.itemId
+        && request.resource.data.ownerUid == request.auth.uid
+        && text(request.resource.data.ownerName, 40)
+        && text(request.resource.data.title, 60)
+        && category(request.resource.data.category)
+        && photo(request.resource.data.photo);
+    }
+
+    // Swap requests: visible only to the two members involved.
+    //   pending -> accepted / declined (by the listing owner) -> completed (by either)
+    match /swapRequests/{requestId} {
+      function involved() {
+        return signedIn() && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      }
+      allow read: if involved();
+      allow create: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.toUid != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && text(request.resource.data.fromName, 40)
+        && photo(request.resource.data.offered.photo)
+        && photo(request.resource.data.listing.photo)
+        && get(/databases/$(database)/documents/listings/$(request.resource.data.listingId)).data.ownerUid == request.resource.data.toUid;
+      allow update: if involved()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && (
+          (resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'declined'] && resource.data.toUid == request.auth.uid)
+          || (resource.data.status == 'accepted' && request.resource.data.status == 'completed')
+        );
+      allow delete: if signedIn() && resource.data.fromUid == request.auth.uid;
+    }
+  }
+}

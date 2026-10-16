@@ -1,8 +1,69 @@
-.DS_Store
-node_modules/
+# =====================================================
+# Files git should never track for Weari
+# =====================================================
 
-# Secrets: never commit these
+# ---------- Secrets: never commit these ----------
 .env
 .env.*
 !.env.example
 .dev.env.json
+# Firebase / Google Cloud service-account keys (the app never needs them)
+*-firebase-adminsdk-*.json
+serviceAccount*.json
+service-account*.json
+credentials*.json
+*.pem
+*.key
+*.p12
+
+# ---------- Dependencies ----------
+node_modules/
+
+# ---------- Build output (made by `npm run build`) ----------
+dist/
+.vite/
+*.local
+
+# ---------- Logs ----------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------- Firebase CLI ----------
+.firebase/
+.firebaserc.local
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+database-debug.log
+storage-debug.log
+ui-debug.log
+emulator-data/
+
+# ---------- Tests and tools ----------
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.eslintcache
+.cache/
+tmp/
+temp/
+
+# ---------- Editors ----------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------- Operating systems ----------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

@@ -1,4 +1,17 @@
-# Recipe for Google Cloud Run: a small Node 24 server that runs server.js.
+# Recipe for Google Cloud Run: builds the web app, then runs a small Node 24 server.
+
+# ---- 1. Build the browser app (index.html + src/ -> dist/) ----
+FROM node:24-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY index.html vite.config.js ./
+COPY public ./public
+COPY src ./src
+COPY shared ./shared
+RUN npm run build
+
+# ---- 2. The server that runs on Cloud Run ----
 FROM node:24-slim
 WORKDIR /app
 ENV NODE_ENV=production
@@ -9,9 +22,10 @@ ENV PORT=8080
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Copy the server and the app's public files (never .env — see .dockerignore)
-COPY server.js buying-brain.js index.html styles.css app.js stylist.js swap-data.js ./
+COPY server ./server
+COPY shared ./shared
+COPY --from=build /app/dist ./dist
 
 USER node
 EXPOSE 8080
-CMD ["node", "server.js"]
+CMD ["node", "server/index.js"]
