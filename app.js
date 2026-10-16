@@ -895,7 +895,7 @@ const $ = (sel) => document.querySelector(sel);
 function showScreen(name) {
   document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== `screen-${name}`));
   // Rewear screens open from the Closet, so the Wardrobe tab stays highlighted
-  const tabName = name.startsWith("rewear-") || name === "my-rewear" ? "wardrobe" : name;
+  const tabName = name.startsWith("rewear-") || name === "my-rewear" ? "wardrobe" : name === "friends" ? "swap" : name;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.go === tabName));
   window.scrollTo(0, 0);
   if (name === "wardrobe") {
@@ -916,6 +916,7 @@ function showScreen(name) {
   if (name === "rewear-swap") renderRewearSwapScreen();
   if (name === "rewear-donate") renderDonateScreen();
   if (name === "my-rewear") renderMyRewear();
+  if (name === "friends") renderFriends();
   if (name === "insights") renderInsights();
   if (name === "karma") renderKarma();
   if (name === "profile" && typeof renderProfileScreen === "function") renderProfileScreen();
@@ -3953,6 +3954,8 @@ async function renderMyRewear() {
       type: l.type,
       listing: l,
       name: l.title || l.itemName || (it ? describe(it) : "Removed item"),
+      itemId: l.itemId,
+      shareKey: `sell_${l.id}`,
       photo: it ? itemIllustration(it, it.photo) : itemIllustration(l),
       meta: l.type === "sell" ? formatLkr(l.price) : l.center || "",
     });
@@ -3962,7 +3965,7 @@ async function renderMyRewear() {
     if (seen.has(it.id)) continue;
     const st = getRewearStatus(it, listings, requests);
     if (!st || st.type !== "swap") continue;
-    rows.push({ key: it.id, status: st.status, type: "swap", name: describe(it), photo: itemIllustration(it, it.photo), meta: "Open to swaps" });
+    rows.push({ key: it.id, itemId: it.id, shareKey: `swap_${it.id}`, status: st.status, type: "swap", name: describe(it), photo: itemIllustration(it, it.photo), meta: "Open to swaps" });
   }
 
   const list = $("#my-rewear-list");
@@ -3977,6 +3980,7 @@ async function renderMyRewear() {
   }
 
   const typeLabel = { sell: "Sell", swap: "Swap", donate: "Donate" };
+  const shares = getFriendShares();
   list.innerHTML = REWEAR_STATUSES.map((status) => {
     const group = rows.filter((r) => r.status === status);
     if (!group.length) return "";
@@ -3995,6 +3999,15 @@ async function renderMyRewear() {
             ${
               r.type === "sell" && r.status === "Listed"
                 ? `<button type="button" class="btn-card-small primary" data-mark-sold="${r.listing.id}">Mark as sold</button>`
+                : ""
+            }
+            ${
+              (r.type === "sell" || r.type === "swap") && r.status === "Listed"
+                ? `<label class="toggle-row share-toggle">
+                     <span>Share with friends</span>
+                     <input type="checkbox" data-share-key="${r.shareKey}" data-share-item="${r.itemId}" data-share-listing="${r.listing ? r.listing.id : ""}" data-share-type="${r.type}" ${shares[r.shareKey] ? "checked" : ""} />
+                     <span class="switch"></span>
+                   </label>`
                 : ""
             }
           </article>`
@@ -4021,6 +4034,7 @@ $("#my-rewear-list")?.addEventListener("click", (e) => {
   saveEarnings(earnings);
 
   awardKarma(KARMA_CONFIG.POINTS.SELL_ITEM, "Sold a piece");
+  syncSharedListingStatus(`sell_${l.id}`, "Sold");
   toast(`Sold for ${formatLkr(l.price)} (simulated) 🎉`);
   renderMyRewear();
 });
@@ -4904,7 +4918,7 @@ function getAllWeariStorageKeys() {
     SAVED_OUTFITS_KEY, REQUESTS_KEY, ONBOARDING_COMPLETED_KEY, ONBOARDING_ANSWERS_KEY,
     PROFILE_KEY, PROFILE_DISMISSED_KEY, PROFILE_FIRST_NAME_KEY, PROFILE_EMAIL_KEY,
     WEARI_PLUS_WAITLIST_KEY, FAVORITES_STORAGE_KEY, WEEKLY_PLAN_KEY, PLAN_REPEAT_KEY,
-    CUSTOM_LABELS_KEY, LISTINGS_KEY, EARNINGS_KEY,
+    CUSTOM_LABELS_KEY, LISTINGS_KEY, EARNINGS_KEY, FRIEND_SHARES_KEY,
     "weari-favorite-outfits",
     ...LEGACY_ITEM_STORAGE_KEYS, ...LEGACY_WEAR_COUNT_KEYS, ...LEGACY_OUTFIT_KEYS,
     ...LEGACY_KARMA_KEYS, ...LEGACY_REQUEST_KEYS,
@@ -6274,6 +6288,647 @@ window.addEventListener("weari-auth", (e) => {
   renderAuthBlocks();
   if (!$("#screen-profile").hidden) renderProfileScreen();
 });
+
+// =====================================================
+// Friends: invite codes, friend feed, borrowing and swap requests (Firestore)
+// Only for signed-in users. Guests never load or call Firestore.
+// Only listings the user switches to "Share with friends" leave this browser.
+//   users/{uid}            displayName, photoURL, inviteCode, createdAt
+//   inviteCodes/{code}     uid, displayName, photoURL (lets a friend find you by code)
+//   friendships/{a_b}      members [a, b] (sorted), status, requestedBy, profiles {uid: {displayName, photoURL}}
+//   listings/{uid_key}     ownerUid, title, description, category, color, thumbnail, type, sharedWithFriends, status, createdAt
+//   requests/{id}          listingId, ownerUid, requesterUid, type, status, messages [{from, text, at}], plus names and title for display
+// =====================================================
+const FRIEND_SHARES_KEY = "weari_friend_shares"; // { shareKey: firestore listing id } for the share switches
+const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I
+const THUMB_MAX_PX = 600;
+const THUMB_MAX_CHARS = 150 * 1024;
+const pendingInviteCode = (new URLSearchParams(location.search).get("invite") || "").toUpperCase().slice(0, 6);
+
+let friendsTab = "feed";
+let myInviteCode = "";
+let friendsCache = []; // [{ id, other, status, requestedBy, profile }]
+let friendFeedCache = [];
+let friendRequestsCache = [];
+let openThreadId = null;
+
+function socialUid() {
+  return authUser ? authUser.uid : null;
+}
+
+async function getFirestore() {
+  if (!socialUid() || !window.WeariAuth || !window.WeariAuth.loadFirestore) throw new Error("signed_out");
+  return window.WeariAuth.loadFirestore();
+}
+
+function friendshipId(a, b) {
+  return a < b ? `${a}_${b}` : `${b}_${a}`;
+}
+
+function myPublicProfile() {
+  return { displayName: (authUser && authUser.displayName) || "Weari friend", photoURL: (authUser && authUser.photoURL) || "" };
+}
+
+function getFriendShares() {
+  try {
+    const data = JSON.parse(localStorage.getItem(FRIEND_SHARES_KEY) || "{}");
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFriendShares(map) {
+  try {
+    localStorage.setItem(FRIEND_SHARES_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+function safeThumb(listing) {
+  const t = String(listing.thumbnail || "");
+  return /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(t) ? t : placeholderImage(listing.category, listing.color, placeholderKind(listing));
+}
+
+function setFriendsStatus(text) {
+  const el = $("#friends-status");
+  if (!el) return;
+  el.textContent = text || "";
+  el.hidden = !text;
+}
+
+// JPEG thumbnail, at most 600px on the long side and under 150KB
+function compressThumbnail(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const nw = img.naturalWidth || THUMB_MAX_PX;
+        const nh = img.naturalHeight || THUMB_MAX_PX;
+        const scale = Math.min(1, THUMB_MAX_PX / Math.max(nw, nh));
+        let w = Math.max(1, Math.round(nw * scale));
+        let h = Math.max(1, Math.round(nh * scale));
+        let quality = 0.82;
+        const canvas = document.createElement("canvas");
+        for (let i = 0; i < 10; i++) {
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff"; // JPEG has no transparency
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          const url = canvas.toDataURL("image/jpeg", quality);
+          if (url.length <= THUMB_MAX_CHARS) return resolve(url);
+          if (quality > 0.5) quality -= 0.12;
+          else {
+            w = Math.round(w * 0.8);
+            h = Math.round(h * 0.8);
+          }
+        }
+        reject(new Error("Photo is too large to share"));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error("Couldn't read the photo"));
+    img.src = src;
+  });
+}
+
+// ---------- My user doc and invite code ----------
+function randomInviteCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(bytes, (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join("");
+}
+
+async function ensureMyUserDoc() {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const me = myPublicProfile();
+  const userRef = fs.doc(db, "users", uid);
+  const snap = await fs.getDoc(userRef);
+  let code = snap.exists() ? snap.data().inviteCode : "";
+
+  if (!code) {
+    for (let attempt = 0; attempt < 5 && !code; attempt++) {
+      const candidate = randomInviteCode();
+      const codeRef = fs.doc(db, "inviteCodes", candidate);
+      if ((await fs.getDoc(codeRef)).exists()) continue;
+      await fs.setDoc(codeRef, { uid, ...me, createdAt: fs.serverTimestamp() });
+      code = candidate;
+    }
+    if (!code) throw new Error("Couldn't make an invite code, please try again");
+    await fs.setDoc(userRef, { ...me, inviteCode: code, createdAt: fs.serverTimestamp() }, { merge: true });
+  } else {
+    await fs.setDoc(userRef, me, { merge: true });
+  }
+  myInviteCode = code;
+  return code;
+}
+
+// ---------- Friendships ----------
+async function loadFriendships() {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const snap = await fs.getDocs(fs.query(fs.collection(db, "friendships"), fs.where("members", "array-contains", uid)));
+  friendsCache = snap.docs.map((d) => {
+    const data = d.data();
+    const other = (data.members || []).find((m) => m !== uid) || "";
+    return {
+      id: d.id,
+      other,
+      status: data.status,
+      requestedBy: data.requestedBy,
+      profile: (data.profiles && data.profiles[other]) || { displayName: "Friend", photoURL: "" },
+    };
+  });
+  return friendsCache;
+}
+
+async function addFriendByCode(rawCode) {
+  const code = String(rawCode || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{6}$/.test(code)) throw new Error("Codes are 6 letters and numbers");
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const codeSnap = await fs.getDoc(fs.doc(db, "inviteCodes", code));
+  if (!codeSnap.exists()) throw new Error("No one has that code yet");
+  const friend = codeSnap.data();
+  if (friend.uid === uid) throw new Error("That's your own code");
+
+  const ref = fs.doc(db, "friendships", friendshipId(uid, friend.uid));
+  const existing = await fs.getDoc(ref);
+  if (existing.exists()) {
+    const data = existing.data();
+    if (data.status === "accepted") return `You're already friends with ${friend.displayName}`;
+    if (data.requestedBy === uid) return `Request already sent to ${friend.displayName}`;
+    await acceptFriendship(existing.id);
+    return `You're now friends with ${friend.displayName} 🎉`;
+  }
+  await fs.setDoc(ref, {
+    members: [uid, friend.uid].sort(),
+    status: "pending",
+    requestedBy: uid,
+    profiles: {
+      [uid]: myPublicProfile(),
+      [friend.uid]: { displayName: friend.displayName || "Friend", photoURL: friend.photoURL || "" },
+    },
+    createdAt: fs.serverTimestamp(),
+  });
+  return `Friend request sent to ${friend.displayName}`;
+}
+
+async function acceptFriendship(id) {
+  const { fs, db } = await getFirestore();
+  await fs.updateDoc(fs.doc(db, "friendships", id), {
+    status: "accepted",
+    [`profiles.${socialUid()}`]: myPublicProfile(),
+    acceptedAt: fs.serverTimestamp(),
+  });
+}
+
+async function declineFriendship(id) {
+  const { fs, db } = await getFirestore();
+  await fs.deleteDoc(fs.doc(db, "friendships", id));
+}
+
+// ---------- Shared listings (my side) ----------
+async function shareListingWithFriends(row) {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const items = await getAllItems();
+  const item = items.find((it) => it.id === row.itemId) || {};
+  const local = row.listingId ? getListings().find((l) => l.id === row.listingId) : null;
+  const thumbnail = await compressThumbnail(itemIllustration(item.category ? item : local || {}, item.photo));
+  const docId = `${uid}_${row.shareKey}`;
+  await fs.setDoc(fs.doc(db, "listings", docId), {
+    ownerUid: uid,
+    title: String((local && local.title) || describe(item) || "Wardrobe piece").slice(0, 60),
+    description: String((local && local.description) || `${item.color || ""} ${item.category || "piece"}, open to swaps and borrowing.`.trim()).slice(0, 400),
+    category: item.category || (local && local.category) || "accessory",
+    color: item.color || (local && local.color) || "multi",
+    thumbnail,
+    type: row.type === "sell" ? "sell" : "swap",
+    sharedWithFriends: true,
+    status: "Listed",
+    createdAt: fs.serverTimestamp(),
+  });
+  const shares = getFriendShares();
+  shares[row.shareKey] = docId;
+  saveFriendShares(shares);
+}
+
+async function unshareListing(shareKey) {
+  const shares = getFriendShares();
+  const docId = shares[shareKey];
+  if (docId) {
+    const { fs, db } = await getFirestore();
+    await fs.deleteDoc(fs.doc(db, "listings", docId));
+  }
+  delete shares[shareKey];
+  saveFriendShares(shares);
+}
+
+// Keep a shared listing's status in step when it's sold locally (best effort)
+async function syncSharedListingStatus(shareKey, status) {
+  const docId = getFriendShares()[shareKey];
+  if (!docId || !socialUid()) return;
+  try {
+    const { fs, db } = await getFirestore();
+    await fs.updateDoc(fs.doc(db, "listings", docId), { status });
+  } catch (err) {
+    console.warn("Couldn't update shared listing:", err.message);
+  }
+}
+
+// ---------- Friends feed ----------
+async function loadFriendFeed() {
+  const { fs, db } = await getFirestore();
+  const friends = (await loadFriendships()).filter((f) => f.status === "accepted");
+  const perFriend = await Promise.all(
+    friends.map(async (f) => {
+      const snap = await fs.getDocs(
+        fs.query(fs.collection(db, "listings"), fs.where("ownerUid", "==", f.other), fs.where("sharedWithFriends", "==", true))
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...d.data(), ownerName: f.profile.displayName }));
+    })
+  );
+  friendFeedCache = perFriend.flat().filter((l) => l.status === "Listed");
+  return friendFeedCache;
+}
+
+// ---------- Requests ----------
+async function loadFriendRequests() {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const col = fs.collection(db, "requests");
+  const [incoming, outgoing] = await Promise.all([
+    fs.getDocs(fs.query(col, fs.where("ownerUid", "==", uid))),
+    fs.getDocs(fs.query(col, fs.where("requesterUid", "==", uid))),
+  ]);
+  const seen = new Map();
+  [...incoming.docs, ...outgoing.docs].forEach((d) => seen.set(d.id, { id: d.id, ...d.data() }));
+  friendRequestsCache = [...seen.values()].sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+  return friendRequestsCache;
+}
+
+async function createFriendRequest(listing, type) {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const text =
+    type === "borrow" ? `Hi! Could I borrow your ${listing.title}?` : `Hi! Would you swap your ${listing.title} for something from my wardrobe?`;
+  await fs.addDoc(fs.collection(db, "requests"), {
+    listingId: listing.id,
+    ownerUid: listing.ownerUid,
+    requesterUid: uid,
+    type,
+    status: "pending",
+    messages: [{ from: uid, text, at: Date.now() }],
+    listingTitle: String(listing.title || "").slice(0, 60),
+    ownerName: listing.ownerName || "Friend",
+    requesterName: myPublicProfile().displayName,
+    createdAt: fs.serverTimestamp(),
+    createdAtMs: Date.now(),
+  });
+}
+
+async function setFriendRequestStatus(id, status) {
+  const { fs, db } = await getFirestore();
+  await fs.updateDoc(fs.doc(db, "requests", id), { status });
+}
+
+async function sendFriendMessage(id, text) {
+  const { fs, db } = await getFirestore();
+  await fs.updateDoc(fs.doc(db, "requests", id), {
+    messages: fs.arrayUnion({ from: socialUid(), text: text.slice(0, 500), at: Date.now() }),
+  });
+}
+
+// ---------- Friends screen ----------
+async function renderFriends() {
+  const signedIn = Boolean(socialUid());
+  $("#friends-guest").hidden = signedIn;
+  $("#friends-signed").hidden = !signedIn;
+  if (!signedIn) return; // guest mode: no Firestore at all
+
+  document.querySelectorAll("[data-friends-tab]").forEach((b) => b.classList.toggle("active", b.dataset.friendsTab === friendsTab));
+  $("#friends-feed").hidden = friendsTab !== "feed";
+  $("#friends-people").hidden = friendsTab !== "people";
+  $("#friends-requests").hidden = friendsTab !== "requests";
+  setFriendsStatus("");
+
+  try {
+    if (friendsTab === "feed") await renderFriendFeed();
+    if (friendsTab === "people") await renderFriendPeople();
+    if (friendsTab === "requests") await renderFriendRequests();
+  } catch (err) {
+    console.warn("Friends unavailable:", err.message);
+    setFriendsStatus("Couldn't reach Friends right now. Your wardrobe is safe on this device; try again in a moment.");
+  }
+}
+
+async function renderFriendFeed() {
+  const box = $("#friends-feed");
+  box.innerHTML = `<p class="auth-msg">Loading your friends’ pieces…</p>`;
+  const feed = await loadFriendFeed();
+  if (!feed.length) {
+    const hasFriends = friendsCache.some((f) => f.status === "accepted");
+    box.innerHTML = `
+      <div class="notice">
+        <div class="notice-icon">👯</div>
+        <p>${hasFriends ? "Your friends haven’t shared anything yet." : "Add a friend with their invite code to see what they share."}</p>
+        <button class="btn-secondary" data-friends-goto="people">${hasFriends ? "See friends" : "Add a friend"}</button>
+      </div>`;
+    return;
+  }
+  box.innerHTML = `<div class="grid collage-grid">${feed
+    .map(
+      (l, i) => `
+      <article class="collage-tile-wrap" data-friend-listing="${escapeHtml(l.id)}" tabindex="0" role="button" aria-label="${escapeHtml(l.title)}">
+        ${collageTileHtml([safeThumb(l)], i)}
+        <h3 class="collage-name">${escapeHtml(l.title)}</h3>
+        <span class="collage-count">${escapeHtml(l.ownerName)} · ${l.type === "sell" ? "For sale" : l.type === "lend" ? "To lend" : "Open to swaps"}</span>
+      </article>`
+    )
+    .join("")}</div>`;
+}
+
+async function renderFriendPeople() {
+  if (pendingInviteCode && !$("#invite-input").value) $("#invite-input").value = pendingInviteCode;
+  $("#my-invite-code").textContent = myInviteCode || "······";
+  const [code, friends] = await Promise.all([myInviteCode ? myInviteCode : ensureMyUserDoc(), loadFriendships()]);
+  $("#my-invite-code").textContent = code;
+  const uid = socialUid();
+
+  const person = (f, actions) => `
+    <div class="friend-row">
+      ${f.profile.photoURL ? `<img class="auth-photo" src="${escapeHtml(f.profile.photoURL)}" alt="" referrerpolicy="no-referrer" />` : `<span class="friend-initial">${escapeHtml((f.profile.displayName || "F")[0])}</span>`}
+      <span class="friend-name">${escapeHtml(f.profile.displayName || "Friend")}</span>
+      ${actions}
+    </div>`;
+
+  const incoming = friends.filter((f) => f.status === "pending" && f.requestedBy !== uid);
+  const outgoing = friends.filter((f) => f.status === "pending" && f.requestedBy === uid);
+  const accepted = friends.filter((f) => f.status === "accepted");
+
+  $("#friends-pending").innerHTML =
+    incoming.length || outgoing.length
+      ? `<h3 class="rewear-group-title">Pending</h3>
+         ${incoming
+           .map((f) =>
+             person(
+               f,
+               `<button type="button" class="btn-card-small primary" data-friend-accept="${escapeHtml(f.id)}">Accept</button>
+                <button type="button" class="btn-card-small" data-friend-decline="${escapeHtml(f.id)}">Decline</button>`
+             )
+           )
+           .join("")}
+         ${outgoing.map((f) => person(f, `<small class="friend-meta">Waiting</small>`)).join("")}`
+      : "";
+
+  $("#friends-list").innerHTML = `
+    <h3 class="rewear-group-title">My friends <span class="seg-count">${accepted.length}</span></h3>
+    ${accepted.length ? accepted.map((f) => person(f, "")).join("") : `<p class="label-empty">No friends yet. Share your code or enter theirs.</p>`}`;
+}
+
+async function renderFriendRequests() {
+  const box = $("#friends-requests");
+  box.innerHTML = `<p class="auth-msg">Loading requests…</p>`;
+  const list = await loadFriendRequests();
+  const uid = socialUid();
+  if (!list.length) {
+    box.innerHTML = `
+      <div class="notice">
+        <div class="notice-icon">💌</div>
+        <p>No requests yet. Tap a piece in the Feed to ask to borrow or offer a swap.</p>
+      </div>`;
+    return;
+  }
+  box.innerHTML = list
+    .map((r) => {
+      const mine = r.ownerUid === uid;
+      const who = mine ? `${escapeHtml(r.requesterName || "A friend")} wants to ${r.type === "borrow" ? "borrow" : "swap for"}` : `You asked ${escapeHtml(r.ownerName || "a friend")} to ${r.type === "borrow" ? "borrow" : "swap"}`;
+      const statusLabel = { pending: "Pending", accepted: "Accepted", declined: "Declined" }[r.status] || r.status;
+      return `
+        <article class="rewear-row friend-request">
+          <div class="rewear-row-info">
+            <strong>${escapeHtml(r.listingTitle || "a piece")}</strong>
+            <small>${who} · <span class="rewear-pill rewear-pill-${r.status === "accepted" ? "sold" : "listed"}">${escapeHtml(statusLabel)}</span></small>
+            <div class="friend-request-actions">
+              ${
+                mine && r.status === "pending"
+                  ? `<button type="button" class="btn-card-small primary" data-request-accept="${escapeHtml(r.id)}">Accept</button>
+                     <button type="button" class="btn-card-small" data-request-decline="${escapeHtml(r.id)}">Decline</button>`
+                  : ""
+              }
+              <button type="button" class="btn-card-small" data-request-thread="${escapeHtml(r.id)}">Messages (${(r.messages || []).length})</button>
+            </div>
+          </div>
+        </article>`;
+    })
+    .join("");
+}
+
+function openFriendListingSheet(id) {
+  const l = friendFeedCache.find((x) => x.id === id);
+  if (!l) return;
+  const asked = friendRequestsCache.find((r) => r.listingId === id && r.requesterUid === socialUid());
+  openSheet(`
+    <div class="friend-listing">
+      ${collageTileHtml([safeThumb(l)], 0)}
+      <h3 class="collage-name">${escapeHtml(l.title)}</h3>
+      <p class="friend-meta">Shared by ${escapeHtml(l.ownerName)}</p>
+      <p class="rewear-copy">${escapeHtml(l.description || "")}</p>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      ${
+        asked
+          ? `<p class="auth-msg">You already sent a ${asked.type === "borrow" ? "borrow" : "swap"} request (${escapeHtml(asked.status)}).</p>`
+          : `<div class="manual-btn-row">
+               <button type="button" class="btn-primary" style="flex:1;" data-friend-ask="borrow" data-listing="${escapeHtml(l.id)}">Ask to borrow</button>
+               <button type="button" class="btn-secondary" style="flex:1;" data-friend-ask="swap" data-listing="${escapeHtml(l.id)}">Offer a swap</button>
+             </div>`
+      }
+      <button class="link-btn sheet-cancel" data-close-sheet>Close</button>
+    </div>`);
+}
+
+function renderFriendThread(id) {
+  const r = friendRequestsCache.find((x) => x.id === id);
+  if (!r) return;
+  openThreadId = id;
+  const uid = socialUid();
+  const other = r.ownerUid === uid ? r.requesterName : r.ownerName;
+  openSheet(`
+    <div class="sheet-header">
+      <div>
+        <h3>${escapeHtml(other || "Friend")}</h3>
+        <p>About ${escapeHtml(r.listingTitle || "a piece")}</p>
+      </div>
+    </div>
+    <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+    <div class="swap-chat-log" id="friend-chat-log">
+      ${(r.messages || [])
+        .map((m) => {
+          const me = m.from === uid;
+          return `<div class="chat-row ${me ? "user" : "stylist"}"><div class="chat-bubble ${me ? "user" : "stylist"}">${escapeHtml(m.text)}</div></div>`;
+        })
+        .join("")}
+    </div>
+    <form class="swap-chat-form" id="friend-chat-form" autocomplete="off">
+      <input type="text" id="friend-chat-input" class="text-input" placeholder="Write a message" maxlength="500" />
+      <button type="submit" class="chat-send-btn" aria-label="Send">↑</button>
+    </form>
+    <button class="link-btn sheet-cancel" data-close-sheet>Close</button>`);
+  const log = $("#friend-chat-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+// Friends screen clicks
+$("#screen-friends")?.addEventListener("click", async (e) => {
+  const tab = e.target.closest("[data-friends-tab]") || e.target.closest("[data-friends-goto]");
+  if (tab) {
+    friendsTab = tab.dataset.friendsTab || tab.dataset.friendsGoto;
+    return renderFriends();
+  }
+  const tile = e.target.closest("[data-friend-listing]");
+  if (tile) {
+    if (!friendRequestsCache.length) await loadFriendRequests().catch(() => []);
+    return openFriendListingSheet(tile.dataset.friendListing);
+  }
+
+  const run = async (fn, ok) => {
+    try {
+      await fn();
+      if (ok) toast(ok);
+    } catch (err) {
+      setFriendsStatus(err.message && !/permission|network|offline/i.test(err.message) ? err.message : "That didn't work. Please try again.");
+    }
+    renderFriends();
+  };
+  const accept = e.target.closest("[data-friend-accept]");
+  if (accept) return run(() => acceptFriendship(accept.dataset.friendAccept), "Friend added 🎉");
+  const decline = e.target.closest("[data-friend-decline]");
+  if (decline) return run(() => declineFriendship(decline.dataset.friendDecline), "Request declined");
+  const reqAccept = e.target.closest("[data-request-accept]");
+  if (reqAccept) return run(() => setFriendRequestStatus(reqAccept.dataset.requestAccept, "accepted"), "Request accepted");
+  const reqDecline = e.target.closest("[data-request-decline]");
+  if (reqDecline) return run(() => setFriendRequestStatus(reqDecline.dataset.requestDecline, "declined"), "Request declined");
+  const thread = e.target.closest("[data-request-thread]");
+  if (thread) return renderFriendThread(thread.dataset.requestThread);
+
+  if (e.target.closest("#btn-share-invite")) {
+    if (!myInviteCode) return;
+    const url = `${location.origin}${location.pathname}?invite=${myInviteCode}`;
+    const text = `Add me on Weari so we can borrow and swap clothes. My code is ${myInviteCode}.`;
+    try {
+      if (navigator.share) await navigator.share({ title: "Weari", text, url });
+      else {
+        await navigator.clipboard.writeText(`${text} ${url}`);
+        toast("Invite link copied");
+      }
+    } catch (err) {
+      if (err && err.name !== "AbortError") setFriendsStatus(`Share this link: ${url}`);
+    }
+  }
+});
+
+$("#invite-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#invite-input");
+  try {
+    const msg = await addFriendByCode(input.value);
+    input.value = "";
+    toast(msg);
+  } catch (err) {
+    setFriendsStatus(err.message && !/permission|network|offline/i.test(err.message) ? err.message : "Couldn't add that friend. Please try again.");
+    return;
+  }
+  renderFriends();
+});
+
+// Listing sheet and message thread live in the shared bottom sheet
+$("#sheet").addEventListener("click", async (e) => {
+  const ask = e.target.closest("[data-friend-ask]");
+  if (!ask) return;
+  const listing = friendFeedCache.find((l) => l.id === ask.dataset.listing);
+  if (!listing) return;
+  ask.disabled = true;
+  try {
+    await createFriendRequest(listing, ask.dataset.friendAsk);
+    closeSheet();
+    toast(ask.dataset.friendAsk === "borrow" ? "Borrow request sent 💌" : "Swap offer sent 🔁");
+    friendsTab = "requests";
+    renderFriends();
+  } catch (err) {
+    ask.disabled = false;
+    toast("Couldn't send that request. Please try again.");
+  }
+});
+
+$("#sheet").addEventListener("submit", async (e) => {
+  if (e.target.id !== "friend-chat-form") return;
+  e.preventDefault();
+  const input = $("#friend-chat-input");
+  const text = input.value.trim();
+  if (!text || !openThreadId) return;
+  input.disabled = true;
+  try {
+    await sendFriendMessage(openThreadId, text);
+    await loadFriendRequests();
+    renderFriendThread(openThreadId);
+    $("#friend-chat-input")?.focus();
+  } catch {
+    input.disabled = false;
+    toast("Message not sent. Please try again.");
+  }
+});
+
+// "Share with friends" switches in My Rewear
+$("#my-rewear-list")?.addEventListener("change", async (e) => {
+  const sw = e.target.closest("[data-share-key]");
+  if (!sw) return;
+  const on = sw.checked;
+  if (!socialUid()) {
+    sw.checked = !on;
+    toast("Sign in with Google to share with friends");
+    return showScreen("friends");
+  }
+  sw.disabled = true;
+  try {
+    if (on) {
+      await shareListingWithFriends({
+        shareKey: sw.dataset.shareKey,
+        itemId: sw.dataset.shareItem,
+        listingId: sw.dataset.shareListing || "",
+        type: sw.dataset.shareType,
+      });
+      toast("Shared with your friends 👯");
+    } else {
+      await unshareListing(sw.dataset.shareKey);
+      toast("No longer shared");
+    }
+  } catch (err) {
+    console.warn("Share failed:", err.message);
+    sw.checked = !on;
+    toast("Couldn't update sharing. Please try again.");
+  } finally {
+    sw.disabled = false;
+  }
+});
+
+// Signing out clears in-memory friend data so nothing carries into guest mode
+window.addEventListener("weari-auth", () => {
+  if (!socialUid()) {
+    myInviteCode = "";
+    friendsCache = [];
+    friendFeedCache = [];
+    friendRequestsCache = [];
+    openThreadId = null;
+  }
+  if (!$("#screen-friends").hidden) renderFriends();
+});
+
+if (pendingInviteCode) {
+  setTimeout(() => toast("Open Friends to add the person who invited you"), 1200);
+}
 
 // ---------- Start ----------
 (async () => {
