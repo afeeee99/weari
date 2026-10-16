@@ -11,6 +11,9 @@ import { FAVORITES_STORAGE_KEY } from "../style/favorites.js";
 import { SAVED_OUTFITS_KEY } from "../style/saved-outfits.js";
 import { PLAN_REPEAT_KEY, WEEKLY_PLAN_KEY } from "../style/weekly-plan.js";
 import { REQUESTS_KEY } from "../swap/swap.js";
+import { FRIEND_SHARES_KEY } from "../friends/friends.js";
+import { EARNINGS_KEY, LISTINGS_KEY } from "../rewear/rewear.js";
+import { CUSTOM_LABELS_KEY } from "../style/labels.js";
 
 // Every storage key Weari has ever used (current + legacy). Keys are not renamed;
 // we just make sure Reset clears all of them.
@@ -20,6 +23,7 @@ function getAllWeariStorageKeys() {
     SAVED_OUTFITS_KEY, REQUESTS_KEY, ONBOARDING_COMPLETED_KEY, ONBOARDING_ANSWERS_KEY,
     PROFILE_KEY, PROFILE_DISMISSED_KEY, PROFILE_FIRST_NAME_KEY, PROFILE_EMAIL_KEY,
     WEARI_PLUS_WAITLIST_KEY, FAVORITES_STORAGE_KEY, WEEKLY_PLAN_KEY, PLAN_REPEAT_KEY,
+    CUSTOM_LABELS_KEY, LISTINGS_KEY, EARNINGS_KEY, FRIEND_SHARES_KEY,
     "weari-favorite-outfits",
     ...LEGACY_ITEM_STORAGE_KEYS, ...LEGACY_WEAR_COUNT_KEYS, ...LEGACY_OUTFIT_KEYS,
     ...LEGACY_KARMA_KEYS, ...LEGACY_REQUEST_KEYS,

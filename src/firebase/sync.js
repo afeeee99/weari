@@ -41,6 +41,10 @@ export const SYNCED_KEYS = {
   weari_profile_dismissed: "lww",
   weari_profile_first_name: "lww",
   weari_plus_waitlist: "lww",
+  weari_custom_labels: "list", // my outfit labels
+  weari_listings: "list", // Rewear: sell and donate listings
+  weari_earnings: "lww", // Rewear: simulated sale earnings
+  weari_friend_shares: "object", // which pieces are shared with friends
 };
 
 // Device-only bookkeeping (never synced; the "weari__" prefix keeps them out of SYNCED_KEYS)

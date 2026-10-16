@@ -9,6 +9,7 @@ import { KARMA_CONFIG, awardKarma } from "../karma/karma.js";
 import { renderStyleOccasions, showSuggestion } from "../style/ai-stylist.js";
 import { styleState } from "../style/style-screen.js";
 import { tagsHtml } from "../swap/swap.js";
+import { formatLkr, getRewearCounts } from "../rewear/rewear.js";
 
 // =====================================================
 // Insights screen
@@ -38,6 +39,17 @@ export async function renderInsights() {
   if (avoidedEl) avoidedEl.textContent = purchasesAvoided;
   const consideredEl = $("#stat-considered");
   if (consideredEl) consideredEl.textContent = getConsideredNotBoughtCount();
+
+  // Rewear: sold, donated and swapped pieces
+  const rewear = getRewearCounts();
+  const setStat = (sel, value) => {
+    const el = $(sel);
+    if (el) el.textContent = value;
+  };
+  setStat("#stat-rewear-sold", rewear.sold);
+  setStat("#stat-rewear-donated", rewear.donated);
+  setStat("#stat-rewear-swapped", rewear.swapped);
+  setStat("#stat-rewear-earned", formatLkr(rewear.earned));
 
   const countsEl = $("#impact-counts");
   if (countsEl) countsEl.textContent = `Estimated · ${completedSwaps} completed swap${completedSwaps === 1 ? "" : "s"} · ${purchasesAvoided} purchase${purchasesAvoided === 1 ? "" : "s"} avoided`;

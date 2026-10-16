@@ -3,7 +3,8 @@ import { describeHtml, escapeHtml } from "../../core/format.js";
 import { LEGACY_OUTFIT_KEYS, getAllItems, normalizeOutfit, saveItem } from "../../data/items-db.js";
 import { recordPurchaseAvoided } from "../insights/impact.js";
 import { KARMA_CONFIG, awardKarma, updateKarmaStreak } from "../karma/karma.js";
-import { isOutfitFavorite, toggleFavoriteOutfit } from "./favorites.js";
+import { isOutfitFavorite, openOutfitLabelSheet, toggleFavoriteOutfit } from "./favorites.js";
+import { labelChipsHtml, labelDisplay, labelState, openLabelManager } from "./labels.js";
 import { manualSlots, renderManualOutfit } from "./manual-builder.js";
 import { kv } from "../../core/kv.js";
 
@@ -36,41 +37,73 @@ export function saveSavedOutfits(list) {
   } catch {}
 }
 
-// Render Saved Outfits List
+// Render Saved Outfits List (with label filter chips)
 export function renderSavedOutfits() {
   const container = $("#saved-outfits-list");
   if (!container) return;
-  const list = getSavedOutfits();
+  const all = getSavedOutfits();
 
+  const chipsBox = $("#saved-label-filters");
+  if (chipsBox) {
+    chipsBox.hidden = all.length === 0;
+    chipsBox.innerHTML = labelChipsHtml({ selected: labelState.savedFilter, attr: "data-saved-filter", withAll: true, extra: all.map((o) => o.label) });
+  }
+
+  if (all.length === 0) {
+    container.innerHTML = `<p class="saved-outfits-empty">No saved outfits yet. Assemble pieces above and tap Save.</p>`;
+    return;
+  }
+
+  const filter = labelState.savedFilter;
+  const list = filter === "all" ? all : all.filter((o) => (o.label || "").toLowerCase() === filter.toLowerCase());
   if (list.length === 0) {
-    container.innerHTML = `<p style="font-size:13px; color:var(--muted); margin:0;">No saved outfits yet. Assemble pieces above and tap Save.</p>`;
+    container.innerHTML = `<p class="saved-outfits-empty">No saved outfits under "${escapeHtml(labelDisplay(filter))}" yet.</p>`;
     return;
   }
 
   container.innerHTML = list
     .map(
       (outfit) => `
-    <article class="saved-outfit-card" data-outfit-id="${outfit.id}">
+    <article class="saved-outfit-card" data-outfit-id="${escapeHtml(outfit.id)}">
       <div class="saved-outfit-header">
-        <h4 class="saved-outfit-title">${escapeHtml(outfit.name)}</h4>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <button type="button" class="fav-heart-btn ${isOutfitFavorite(outfit.id) ? "active" : ""}" data-toggle-fav="${outfit.id}" title="Toggle favorite">♥</button>
-          <button type="button" class="btn-link-action" data-delete-outfit="${outfit.id}" title="Delete look">Delete</button>
+        <div class="fav-card-title-group">
+          <h4 class="saved-outfit-title">${escapeHtml(outfit.name)}</h4>
+          ${outfit.label ? `<span class="fav-card-label-tag">${escapeHtml(labelDisplay(outfit.label))}</span>` : ""}
+        </div>
+        <div class="saved-outfit-tools">
+          <button type="button" class="fav-heart-btn ${isOutfitFavorite(outfit.id) ? "active" : ""}" data-toggle-fav="${escapeHtml(outfit.id)}" title="Toggle favorite">♥</button>
+          <button type="button" class="btn-link-action" data-delete-outfit="${escapeHtml(outfit.id)}" title="Delete look">Delete</button>
         </div>
       </div>
       <div class="saved-outfit-strip">
-        ${outfit.items.map((it) => `<img class="saved-strip-img" src="${it.photo}" alt="${describeHtml(it)}" title="${describeHtml(it)}" />`).join("")}
+        ${outfit.items.map((it) => `<img class="saved-strip-img" src="${escapeHtml(it.photo)}" alt="${describeHtml(it)}" title="${describeHtml(it)}" />`).join("")}
       </div>
       <div class="saved-outfit-actions">
-        <button type="button" class="btn-card-small primary" data-wear-saved="${outfit.id}">✓ I wore this</button>
-        <button type="button" class="btn-card-small" data-load-saved="${outfit.id}">Load into slots</button>
+        <button type="button" class="btn-card-small primary" data-wear-saved="${escapeHtml(outfit.id)}">✓ I wore this</button>
+        <button type="button" class="btn-card-small" data-load-saved="${escapeHtml(outfit.id)}">Load into slots</button>
+        <button type="button" class="btn-card-small" data-label-saved="${escapeHtml(outfit.id)}">Label</button>
       </div>
     </article>`
     )
     .join("");
 }
 
+$("#saved-label-filters")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) return openLabelManager();
+  const chip = e.target.closest("[data-saved-filter]");
+  if (!chip) return;
+  labelState.savedFilter = chip.dataset.savedFilter;
+  renderSavedOutfits();
+});
+
 $("#saved-outfits-list")?.addEventListener("click", async (e) => {
+  const labelBtn = e.target.closest("[data-label-saved]");
+  if (labelBtn) {
+    const outfit = getSavedOutfits().find((o) => o.id === labelBtn.dataset.labelSaved);
+    if (outfit) openOutfitLabelSheet(outfit, "saved");
+    return;
+  }
+
   const favBtn = e.target.closest("[data-toggle-fav]");
   if (favBtn) {
     const id = favBtn.dataset.toggleFav;

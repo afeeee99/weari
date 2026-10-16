@@ -5,6 +5,7 @@ import { colorHex } from "../../core/placeholders.js";
 import { closeSheet, openSheet } from "../../core/sheet.js";
 import { deleteItem, getItem, saveItem } from "../../data/items-db.js";
 import { KARMA_CONFIG, awardKarma, unlockBadge, updateKarmaStreak } from "../karma/karma.js";
+import { openRewearFlow, rewearSheetSection } from "../rewear/rewear.js";
 import { renderWardrobe } from "./wardrobe.js";
 
 // =====================================================
@@ -59,6 +60,8 @@ export async function openItemDetailSheet(itemId) {
             </button>
           </div>
 
+          ${rewearSheetSection(it)}
+
           <div class="item-detail-actions">
             <button type="button" class="btn-outline-action" data-sheet-toggle-swap="${it.id}">
               ${it.swappable ? "Remove from swap feed" : `List on Rewear (+${KARMA_CONFIG.POINTS.MARK_SWAPPABLE} pts)`}
@@ -73,6 +76,9 @@ export async function openItemDetailSheet(itemId) {
 }
 
 $("#sheet").addEventListener("click", async (e) => {
+  const rewearBtn = e.target.closest("[data-rewear-action]");
+  if (rewearBtn) return openRewearFlow(rewearBtn.dataset.rewearAction, rewearBtn.dataset.rewearItem);
+
   const markWornBtn = e.target.closest("[data-sheet-mark-worn]");
   if (markWornBtn) {
     const it = await getItem(markWornBtn.dataset.sheetMarkWorn);

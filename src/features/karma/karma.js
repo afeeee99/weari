@@ -13,6 +13,8 @@ export const KARMA_CONFIG = {
     WEAR_IDLE_ITEM: 25, // not worn in 30 days or never worn before
     REWEAR_OUTFIT: 10,  // re-wearing an outfit instead of buying new
     SKIP_PURCHASE: 15,  // chose not to buy after a purchase check in Chat
+    SELL_ITEM: 20,      // a listed piece was sold (simulated) instead of thrown away
+    DONATE_ITEM: 20,    // donated a piece to a donation center
   },
   LEVELS: [
     { name: "Closet Curious", minPoints: 0, icon: "🌱" },

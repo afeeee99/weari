@@ -16,6 +16,7 @@ import { clearDeviceData } from "../settings/reset.js";
 //             and the Swap feed shows real community listings
 // =====================================================
 const PROFILE_FIRST_NAME_KEY = "weari_profile_first_name";
+const PROFILE_EMAIL_KEY = "weari_profile_email";
 
 let firebase = null; // src/firebase/index.js once loaded
 let currentUser = null;
@@ -71,6 +72,8 @@ async function handleUserChanged(user) {
   const wasGuest = !currentUser;
   currentUser = user;
   if (user) {
+    fillProfileFromAccount(user);
+    guestChosen = false;
     firebase.startSync(user, {
       ownerName: getDisplayName,
       onChange: onCloudChange,
@@ -136,7 +139,57 @@ function renderSyncStatus() {
   el.innerHTML = s.text ? `<span class="sync-dot"></span>${s.text}` : "";
 }
 
+// Sign-in prompts placed around the app (<div data-auth-block>): Closet card, Friends, Settings
+let guestChosen = false; // "Continue as guest" tapped during this visit
+
+function renderAuthBlocks() {
+  document.querySelectorAll("[data-auth-block]").forEach((block) => {
+    const signedIn = Boolean(currentUser);
+    block.hidden = cloudState !== "ready" || (block.dataset.authBlock === "prompt" && guestChosen && !signedIn);
+    block.querySelector("[data-auth-guest]").hidden = signedIn;
+    block.querySelector("[data-auth-signed]").hidden = !signedIn;
+    if (signedIn) {
+      block.querySelector("[data-auth-name]").textContent = currentUser.displayName || currentUser.email || "Weari member";
+      const photo = block.querySelector("[data-auth-photo]");
+      photo.hidden = !currentUser.photoURL;
+      if (currentUser.photoURL) photo.src = currentUser.photoURL;
+    }
+  });
+
+  // Profile avatar: account photo while signed in, otherwise the initial
+  const avatar = $("#profile-avatar");
+  if (avatar) {
+    let img = avatar.querySelector(".profile-avatar-photo");
+    if (currentUser?.photoURL) {
+      if (!img) {
+        img = document.createElement("img");
+        img.className = "profile-avatar-photo";
+        img.alt = "";
+        img.referrerPolicy = "no-referrer";
+        avatar.appendChild(img);
+      }
+      img.src = currentUser.photoURL;
+      img.hidden = false;
+    } else if (img) img.hidden = true;
+  }
+}
+
+function showBlockMessage(button, text) {
+  const msg = button.closest("[data-auth-block]")?.querySelector("[data-auth-msg]");
+  if (!msg) return toast(text);
+  msg.textContent = text;
+  msg.hidden = !text;
+}
+
+// First sign-in fills in an empty profile name and email (never overwrites what was typed)
+function fillProfileFromAccount(user) {
+  const firstName = (user.displayName || "").trim().split(/\s+/)[0];
+  if (firstName && !kv.getItem(PROFILE_FIRST_NAME_KEY)) kv.setItem(PROFILE_FIRST_NAME_KEY, firstName);
+  if (user.email && !kv.getItem(PROFILE_EMAIL_KEY)) kv.setItem(PROFILE_EMAIL_KEY, user.email);
+}
+
 export function renderAccountUI() {
+  renderAuthBlocks();
   const chip = $("#account-chip");
   if (chip) {
     chip.hidden = cloudState !== "ready";
@@ -268,7 +321,38 @@ document.addEventListener("click", async (e) => {
   const modeBtn = e.target.closest("[data-auth-mode]");
   if (modeBtn) return openAuthSheet(modeBtn.dataset.authMode);
 
-  if (e.target.closest("[data-auth-signout]")) return signOutFlow();
+  if (e.target.closest("[data-auth-signout]") || e.target.closest("[data-google-signout]")) return signOutFlow();
+
+  const guest = e.target.closest("[data-continue-guest]");
+  if (guest) {
+    guestChosen = true;
+    renderAuthBlocks();
+    showBlockMessage(guest, "You're using Weari as a guest. Your wardrobe stays on this device.");
+    return;
+  }
+
+  // "Continue with Google" inside a sign-in prompt
+  const blockGoogle = e.target.closest("[data-google-signin]");
+  if (blockGoogle) {
+    if (!isCloudReady()) return showBlockMessage(blockGoogle, "Sign-in isn’t available right now. You’re still in guest mode.");
+    const native = nativeBridge();
+    if (native?.googleSignIn) return native.googleSignIn();
+    const label = blockGoogle.querySelector("span");
+    const original = label ? label.textContent : "";
+    blockGoogle.disabled = true;
+    if (label) label.textContent = "Opening Google…";
+    try {
+      await firebase.signInWithGoogle();
+      if (currentUser) toast(`Welcome, ${getDisplayName()} ✨`);
+    } catch (err) {
+      const msg = firebase.friendlyAuthError(err);
+      showBlockMessage(blockGoogle, msg ? `${msg} You’re still in guest mode.` : "Sign-in was cancelled. You’re still in guest mode.");
+    } finally {
+      blockGoogle.disabled = false;
+      if (label) label.textContent = original;
+    }
+    return;
+  }
 
   const google = e.target.closest('[data-auth="google"]');
   if (google) {

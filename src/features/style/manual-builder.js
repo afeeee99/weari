@@ -5,6 +5,7 @@ import { getAllItems, saveItem } from "../../data/items-db.js";
 import { recordPurchaseAvoided } from "../insights/impact.js";
 import { KARMA_CONFIG, awardKarma, unlockBadge, updateKarmaStreak } from "../karma/karma.js";
 import { getSavedOutfits, renderSavedOutfits, saveSavedOutfits } from "./saved-outfits.js";
+import { labelState } from "./labels.js";
 
 // Manual Outfit Slot State
 export const manualSlots = {
@@ -209,6 +210,7 @@ $("#btn-manual-save")?.addEventListener("click", () => {
       photo: it.photo,
     })),
     createdAt: Date.now(),
+    label: labelState.manual,
   });
   saveSavedOutfits(saved);
   awardKarma(10, "Saved custom look");

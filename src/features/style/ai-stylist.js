@@ -9,6 +9,7 @@ import { KARMA_CONFIG, awardKarma, unlockBadge, updateKarmaStreak } from "../kar
 import { getOnboardingPreferences, suggestOutfit } from "./basic-stylist.js";
 import { promptFavoriteOutfit } from "./favorites.js";
 import { getSavedOutfits, renderSavedOutfits, saveSavedOutfits } from "./saved-outfits.js";
+import { handleStylistLabelClick, labelState, renderStylistLabelChips } from "./labels.js";
 import { styleState } from "./style-screen.js";
 
 export async function renderStyleOccasions() {
@@ -184,12 +185,18 @@ export async function showSuggestion(forcedItemId = null) {
           ? `<div class="outfit-explanation"><p>${escapeHtml(result.explanation)}</p></div>`
           : ""
       }
+      <div class="field-group stylist-label-group">
+        <span class="field-label">Label <span class="hint">(optional)</span></span>
+        <div class="label-chip-row" id="stylist-label-chips"></div>
+      </div>
       <button id="wore-outfit" class="btn-primary btn-block" style="margin-bottom: 8px;">✓ I wore this outfit</button>
       <div style="display:flex; gap:8px; margin-bottom:8px;">
         <button id="btn-fav-suggested" type="button" class="btn-secondary" style="flex:1;">♥ Favorite look</button>
         <button id="btn-save-suggested" type="button" class="btn-secondary" style="flex:1;">💾 Save look</button>
       </div>
       <button id="try-another" class="btn-secondary btn-block">↻ Try another</button>`;
+    labelState.stylist = "";
+    renderStylistLabelChips();
     box.classList.remove("fade-in");
     void box.offsetWidth; // restart the fade animation
     box.classList.add("fade-in");
@@ -228,6 +235,8 @@ $("#style-result").addEventListener("click", async (e) => {
     return;
   }
 
+  if (handleStylistLabelClick(e)) return;
+
   const favBtn = e.target.closest("#btn-fav-suggested") || e.target.closest("#btn-fav-suggested-header");
   if (favBtn && currentSuggestedOutfit && currentSuggestedOutfit.length) {
     const outfit = {
@@ -236,6 +245,7 @@ $("#style-result").addEventListener("click", async (e) => {
       occasion: styleState.occasion || "casual",
       createdAt: Date.now(),
       items: currentSuggestedOutfit.map((p) => p.item),
+      label: labelState.stylist,
     };
     promptFavoriteOutfit(outfit);
     return;
@@ -249,6 +259,7 @@ $("#style-result").addEventListener("click", async (e) => {
       occasion: styleState.occasion || "casual",
       createdAt: Date.now(),
       items: currentSuggestedOutfit.map((p) => p.item),
+      label: labelState.stylist,
     };
     const list = getSavedOutfits();
     list.unshift(outfit);

@@ -1,9 +1,9 @@
-import { addDoc, collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, limit, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
 import { fb } from "./app.js";
 
 // =====================================================
 // Community swap feed (shared between all signed-in users)
-//   listings/{uid}_{itemId}  an item someone marked "Available to swap"
+//   listings/{uid}_{itemId}  an item someone marked "Available to swap" (public: true)
 //   swapRequests/{id}        "I'd swap my X for your Y"
 //     status: pending -> accepted | declined -> completed
 // Who may read or change what is enforced by firestore.rules.
@@ -23,6 +23,10 @@ export function upsertListing(uid, ownerName, item) {
     color: item.color,
     occasions: (item.occasions || []).slice(0, 5),
     photo: item.photo || "",
+    type: "swap",
+    status: "Listed",
+    public: true, // on the community swap feed (friends-only listings have public: false)
+    sharedWithFriends: false,
     createdAt: item.createdAt || Date.now(),
     updatedAt: Date.now(),
   });
@@ -32,12 +36,13 @@ export function removeListing(uid, itemId) {
   return deleteDoc(doc(fb.db, "listings", listingDocId(uid, itemId)));
 }
 
-// Newest 100 listings from everyone; onChange(list) runs on every update
+// Newest 100 public listings from everyone; onChange(list) runs on every update.
+// (Sorted here rather than in the query, so Firestore needs no extra index.)
 export function watchListings(onChange, onError) {
-  const q = query(collection(fb.db, "listings"), orderBy("createdAt", "desc"), limit(100));
+  const q = query(collection(fb.db, "listings"), where("public", "==", true), limit(100));
   return onSnapshot(
     q,
-    (snap) => onChange(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    (snap) => onChange(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))),
     (err) => {
       console.warn("Swap feed unavailable:", err.code || err);
       onError?.(err);

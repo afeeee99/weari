@@ -6,7 +6,7 @@
 // =====================================================
 import "./styles/index.css";
 
-import { showScreen } from "./core/router.js";
+import { initialScreen, showScreen } from "./core/router.js";
 import { migrateAllData } from "./data/migrate.js";
 import { buildAddForm } from "./features/add-item/add-item.js";
 import { renderKarma } from "./features/karma/karma-screen.js";
@@ -28,6 +28,9 @@ import "./features/style/saved-outfits.js";
 import "./features/style/favorites.js";
 import "./features/style/weekly-plan.js";
 import "./features/swap/swap.js";
+import "./features/rewear/rewear.js";
+import "./features/friends/friends.js";
+import "./features/style/labels.js";
 import "./features/insights/insights.js";
 import "./features/profile/profile-card.js";
 import "./features/profile/profile-screen.js";
@@ -41,7 +44,7 @@ import "./features/settings/reset.js";
   updateKarmaStreak();
   updateKarmaChip();
   renderKarma();
-  showScreen("wardrobe");
+  showScreen(initialScreen(), { push: false });
 
   // Show onboarding on first time open
   if (!kv.getItem(ONBOARDING_COMPLETED_KEY)) {

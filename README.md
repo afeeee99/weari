@@ -1,13 +1,14 @@
 # Weari
 
 A wardrobe and clothing-swap web app. Add your clothes, get outfit ideas from a
-Gemini-powered stylist, plan your week, swap pieces with other people and earn karma
-for rewearing. Works on phones, tablets and laptops, and is ready to be wrapped as a
+Gemini-powered stylist, plan your week or month, label your outfits, sell, swap or donate
+pieces you don't wear, borrow from friends, and earn karma for rewearing. Works on phones, tablets and laptops, and is ready to be wrapped as a
 mobile app (WebView).
 
 - **Guest mode:** everything works straight away and is saved on the device.
 - **Signed in (Firebase):** the wardrobe syncs to the user's account on every device,
-  and the Swap feed shows real listings from other members.
+  the Swap deck shows real listings from other members, and **Friends** (invite codes,
+  borrow and swap requests with messages) turns on.
 
 ## Run it on your computer
 
@@ -55,15 +56,17 @@ weari/
 │   ├── data/             The on-device wardrobe database (IndexedDB)
 │   ├── features/         One folder per part of the app
 │   │   ├── wardrobe/  add-item/  camera/  buying-brain/
-│   │   ├── style/        Chat, AI stylist, Create your own, favorites, weekly plan
-│   │   ├── swap/         Community swap feed + sample listings
+│   │   ├── style/        Chat, AI stylist, Create your own, favorites, labels, week/month plan
+│   │   ├── swap/         Swipe deck: community + sample listings, demo chat
+│   │   ├── rewear/       Sell, Swap, Donate and My Rewear
+│   │   ├── friends/      Invite codes, friends' feed, borrow/swap requests
 │   │   ├── insights/  karma/  onboarding/  profile/  settings/  demo/
 │   │   └── account/      Sign-in and the account card
-│   ├── firebase/         Everything that talks to Firebase (auth, sync, photos, community)
+│   ├── firebase/         Everything that talks to Firebase (auth, sync, photos, community, friends)
 │   └── styles/           CSS: base, one file per screen, responsive layout
 ├── shared/               Code used by both the browser and the server (Buying Brain rules)
 ├── server/               Node + Express server: serves the app, talks to Gemini
-│   └── routes/           One file per AI feature (tag, style, review, chat, buycheck)
+│   └── routes/           One file per AI feature (tag, style, review, chat, buycheck, listing)
 ├── firebase/             Firestore + Storage security rules
 ├── public/               Icons and the web-app manifest
 └── docs/                 Guides: architecture, Firebase setup, mobile app
@@ -82,6 +85,7 @@ The browser never sees the Gemini key. It calls the Weari server, which calls Ge
 | `POST /api/review` | category, color and name of each piece in a "Create your own" look | a two-sentence review |
 | `POST /api/chat` | message, last 4 messages, optional photo, wardrobe text with wear counts | `kind`, `reply`, `outfit_item_ids`, `missing_pieces`, `verdict` |
 | `POST /api/buycheck` | one photo, optional price, wardrobe text | `verdict`, `reason`, similar and pairing item ids |
+| `POST /api/listing` | name, category, color, occasions and wear count of one item (Rewear → Sell) | a resale `title` and `description` |
 | `GET /api/config` | – | the Firebase web config (or `null` = on-device mode) |
 
 - One Gemini call per request. The model is set in `GEMINI_MODEL` in `server/config.js`. Only
@@ -94,8 +98,9 @@ The browser never sees the Gemini key. It calls the Weari server, which calls Ge
 
 - **On the device:** IndexedDB database `weari` (clothes and photos) and `localStorage` keys
   starting with `weari` (outfits, plan, karma, settings). **Profile → Reset app** clears them.
-- **In Firebase (signed in):** `users/{uid}/items`, `users/{uid}/state`, community `listings`
-  and `swapRequests`, photos in Storage. Details in [docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md).
+- **In Firebase (signed in):** `users/{uid}/items`, `users/{uid}/state`, `listings`,
+  `swapRequests`, and for Friends `inviteCodes`, `friendships` and `requests`; photos in Storage.
+  Details in [docs/FIREBASE_SETUP.md](docs/FIREBASE_SETUP.md).
 
 ## Deploy to Google Cloud Run
 

@@ -71,16 +71,21 @@ open the app in another browser and sign in with the same account: the item appe
 users/{uid}                      { displayName, lastSeenAt }  — shown to swap partners
 users/{uid}/items/{itemId}       one wardrobe item (photo = Storage URL)
 users/{uid}/state/{key}          { value, updatedAt } — outfits, favorites, plan, karma, settings
-listings/{uid}_{itemId}          an item marked "Available to swap" (all signed-in members can see it)
-swapRequests/{id}                { fromUid, toUid, listing, offered, status } — only the two members can see it
+listings/{uid}_{itemId}          public: true  — an item marked "Available to swap" (all signed-in members can see it)
+listings/{uid}_{shareKey}        sharedWithFriends: true — a piece shared from My Rewear (only accepted friends)
+swapRequests/{id}                { fromUid, toUid, listing, offered, status } — community swaps, only the two members
+inviteCodes/{code}               { uid, displayName, photoURL } — lets a friend find you by your 6-letter code
+friendships/{uidA_uidB}          { members, status, requestedBy, profiles } — pending until the other person accepts
+requests/{id}                    { ownerUid, requesterUid, type: borrow | swap, status, messages } — between friends
 Storage: users/{uid}/photos/{hash}.jpg
 ```
 
 | Who | Can |
 |---|---|
 | The owner | read and write everything under their own `users/{uid}` and photos |
-| Any signed-in member | browse `listings` and view listing photos |
-| The two members in a swap | see the request. The listing owner accepts or declines; either can mark it completed |
+| Any signed-in member | browse public `listings`, view listing photos, look up an invite code they know |
+| Accepted friends | see each other's friends-only listings and send borrow/swap requests |
+| The two members in a swap or request | see it and (for friends) message each other. The owner accepts or declines |
 
 ## How sync behaves
 

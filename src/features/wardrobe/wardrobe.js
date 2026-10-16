@@ -1,4 +1,5 @@
 import { CATEGORIES } from "../../core/constants.js";
+import { CLOSET_TILE_NAMES, collageTileHtml } from "../../core/collage.js";
 import { $ } from "../../core/dom.js";
 import { describeHtml, escapeHtml } from "../../core/format.js";
 import { getAllItems } from "../../data/items-db.js";
@@ -43,30 +44,52 @@ export async function renderWardrobe() {
     wardrobeState.filter === "all" ? true : wardrobeState.filter === "swap" ? it.swappable : it.category === wardrobeState.filter
   );
 
-  $("#grid").innerHTML = shown
-    .map(
-      (it) => `
-      <article class="card wardrobe-card" data-card-item-id="${it.id}" tabindex="0" role="button" aria-label="${describeHtml(it)}">
-        <div class="card-media">
-          <img src="${escapeHtml(it.photo)}" alt="${describeHtml(it)}" loading="lazy" />
+  const grid = $("#grid");
+  grid.className = "grid collage-grid";
+  if (wardrobeState.filter === "all") {
+    // One collage tile per category, made from the newest pieces in it
+    grid.innerHTML = CATEGORIES.map((cat) => items.filter((it) => it.category === cat))
+      .filter((group) => group.length)
+      .map((group, i) => {
+        const cat = group[0].category;
+        const name = CLOSET_TILE_NAMES[cat] || cat;
+        const count = `${group.length} piece${group.length === 1 ? "" : "s"}`;
+        return `
+        <article class="collage-tile-wrap" data-closet-category="${cat}" tabindex="0" role="button" aria-label="${name}, ${count}">
+          ${collageTileHtml(group.map((it) => it.photo), i)}
+          <h3 class="collage-name">${name}</h3>
+          <span class="collage-count">${count}</span>
+        </article>`;
+      })
+      .join("");
+  } else {
+    grid.innerHTML = shown
+      .map(
+        (it, i) => `
+        <article class="collage-tile-wrap wardrobe-card" data-card-item-id="${it.id}" tabindex="0" role="button" aria-label="${describeHtml(it)}">
+          ${collageTileHtml([it.photo], i)}
           ${it.swappable ? `<span class="swap-dot" title="Up for swap"></span>` : ""}
-        </div>
-        <div class="card-body">
-          <h3 class="card-name">${describeHtml(it)}</h3>
-          <div class="card-tags-line">
-            ${it.occasions && it.occasions.length ? it.occasions.map((o) => `<span class="tag">${escapeHtml(o)}</span>`).join("") : `<span class="tag">casual</span>`}
-          </div>
-        </div>
-      </article>`
-    )
-    .join("");
+          <h3 class="collage-name">${describeHtml(it)}</h3>
+          <span class="collage-count">${escapeHtml((it.occasions && it.occasions.length ? it.occasions : ["casual"]).join(" · "))}</span>
+        </article>`
+      )
+      .join("");
+  }
 
   if (items.length && !shown.length) {
     $("#grid").innerHTML = `<p class="grid-empty">Nothing here yet.</p>`;
   }
 }
 
+// Tapping a category tile opens that category
+function openCategory(tile) {
+  wardrobeState.filter = tile.dataset.closetCategory;
+  renderWardrobe();
+}
+
 $("#grid").addEventListener("click", async (e) => {
+  const tile = e.target.closest("[data-closet-category]");
+  if (tile) return openCategory(tile);
   const card = e.target.closest("[data-card-item-id]");
   if (card) {
     openItemDetailSheet(card.dataset.cardItemId);
@@ -76,6 +99,11 @@ $("#grid").addEventListener("click", async (e) => {
 
 $("#grid").addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
+    const tile = e.target.closest("[data-closet-category]");
+    if (tile) {
+      e.preventDefault();
+      return openCategory(tile);
+    }
     const card = e.target.closest("[data-card-item-id]");
     if (card) {
       e.preventDefault();

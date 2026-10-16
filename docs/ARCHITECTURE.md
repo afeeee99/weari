@@ -27,7 +27,10 @@
 - **`data/`** is the on-device wardrobe (IndexedDB). `saveItem` / `deleteItem` announce changes
   through `onItemsChange` (the sync listens). `migrate.js` imports data from older versions.
 - **`features/<name>/`** holds one folder per area of the app. Files only talk to each other
-  through `import`, never through global variables.
+  through `import`, never through global variables. For example `rewear/` (Sell, Swap, Donate,
+  My Rewear), `friends/` (invite codes and borrowing), `swap/` (the swipe deck),
+  `style/labels.js` (custom outfit labels) and `style/weekly-plan.js` (week and month views).
+- **`core/collage.js`** draws the colored collage tiles used by the Closet, Favorites, Swap and Plan.
 - **`firebase/`** is only downloaded when the server reports a Firebase config, so guests on a
   server without Firebase never load the Firebase code.
 - **`styles/`** has `base.css` (shared look), `features/*.css` (one per screen),

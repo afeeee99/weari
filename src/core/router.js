@@ -11,13 +11,20 @@ import { renderSavedOutfits } from "../features/style/saved-outfits.js";
 import { currentStyleMode } from "../features/style/style-screen.js";
 import { renderWeeklyPlan } from "../features/style/weekly-plan.js";
 import { renderSwap } from "../features/swap/swap.js";
+import { renderFriends } from "../features/friends/friends.js";
+import { renderDonateScreen, renderMyRewear, renderRewearSwapScreen, renderSellScreen } from "../features/rewear/rewear.js";
+import { renderManualLabelChips } from "../features/style/labels.js";
 import { renderWardrobe } from "../features/wardrobe/wardrobe.js";
 
 // =====================================================
 // Screens. Each screen has its own address (#wardrobe, #style…), so the
 // browser's Back button and the Android back button work as expected.
 // =====================================================
-const SCREENS = ["wardrobe", "add", "style", "swap", "insights", "karma", "profile"];
+const SCREENS = ["wardrobe", "add", "style", "swap", "insights", "karma", "profile", "friends", "my-rewear", "rewear-sell", "rewear-swap", "rewear-donate"];
+// Screens opened from another screen keep that screen's menu tab highlighted
+const TAB_FOR_SCREEN = { "my-rewear": "wardrobe", "rewear-sell": "wardrobe", "rewear-swap": "wardrobe", "rewear-donate": "wardrobe", friends: "swap" };
+// These need an item picked first, so they can't be opened straight from the address bar
+const NOT_DIRECT = ["add", "rewear-sell", "rewear-swap", "rewear-donate"];
 let currentScreen = "wardrobe";
 
 export const getCurrentScreen = () => currentScreen;
@@ -25,7 +32,7 @@ export const getCurrentScreen = () => currentScreen;
 // The screen named in the address bar, e.g. weari.app/#swap
 export function initialScreen() {
   const name = location.hash.replace("#", "");
-  return SCREENS.includes(name) && name !== "add" ? name : "wardrobe";
+  return SCREENS.includes(name) && !NOT_DIRECT.includes(name) ? name : "wardrobe";
 }
 
 function renderScreen(name) {
@@ -36,12 +43,18 @@ function renderScreen(name) {
   if (name === "style") {
     renderStyleOccasions();
     renderManualOutfit();
+    renderManualLabelChips();
     renderSavedOutfits();
     renderFavorites();
     renderWeeklyPlan();
     if (currentStyleMode === "chat") renderChat();
   }
   if (name === "swap") renderSwap();
+  if (name === "friends") renderFriends();
+  if (name === "my-rewear") renderMyRewear();
+  if (name === "rewear-sell") renderSellScreen();
+  if (name === "rewear-swap") renderRewearSwapScreen();
+  if (name === "rewear-donate") renderDonateScreen();
   if (name === "insights") renderInsights();
   if (name === "karma") renderKarma();
   if (name === "profile") renderProfileScreen();
@@ -51,8 +64,9 @@ export function showScreen(name, { push = true } = {}) {
   if (!SCREENS.includes(name)) name = "wardrobe";
   currentScreen = name;
   document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== `screen-${name}`));
+  const tabName = TAB_FOR_SCREEN[name] || name;
   document.querySelectorAll(".tab").forEach((t) => {
-    const active = t.dataset.go === name;
+    const active = t.dataset.go === tabName;
     t.classList.toggle("active", active);
     if (active) t.setAttribute("aria-current", "page");
     else t.removeAttribute("aria-current");

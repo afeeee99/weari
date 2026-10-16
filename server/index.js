@@ -5,6 +5,7 @@ import { FIREBASE_CONFIG, GEMINI_FALLBACK_MODEL, GEMINI_MODEL, MOCK_GEMINI, PORT
 import { ai } from './gemini.js';
 import { router as buycheckRouter } from './routes/buycheck.js';
 import { router as chatRouter } from './routes/chat.js';
+import { router as listingRouter } from './routes/listing.js';
 import { router as reviewRouter } from './routes/review.js';
 import { router as styleRouter } from './routes/style.js';
 import { router as tagRouter } from './routes/tag.js';
@@ -37,7 +38,7 @@ app.get('/api/config', (req, res) => {
 });
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-app.use('/api', tagRouter, styleRouter, reviewRouter, chatRouter, buycheckRouter);
+app.use('/api', tagRouter, styleRouter, reviewRouter, chatRouter, buycheckRouter, listingRouter);
 
 // Unknown API routes and broken request bodies also get JSON
 app.use('/api', (req, res) => res.status(404).json({ ok: false, error: 'not_found' }));

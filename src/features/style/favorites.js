@@ -1,20 +1,23 @@
+import { collageTileHtml } from "../../core/collage.js";
 import { $, toast } from "../../core/dom.js";
-import { describeHtml, escapeHtml } from "../../core/format.js";
+import { escapeHtml } from "../../core/format.js";
+import { kv } from "../../core/kv.js";
 import { getAllItems, saveItem } from "../../data/items-db.js";
 import { recordPurchaseAvoided } from "../insights/impact.js";
 import { renderInsights } from "../insights/insights.js";
 import { KARMA_CONFIG, awardKarma, updateKarmaStreak } from "../karma/karma.js";
-import { manualSlots } from "./manual-builder.js";
-import { renderSavedOutfits } from "./saved-outfits.js";
 import { renderWardrobe } from "../wardrobe/wardrobe.js";
-import { kv } from "../../core/kv.js";
+import { labelChipsHtml, labelDisplay, labelState, openLabelManager } from "./labels.js";
+import { manualSlots } from "./manual-builder.js";
+import { getSavedOutfits, renderSavedOutfits, saveSavedOutfits } from "./saved-outfits.js";
 
 // =====================================================
-// PART 3: Favorites Section & Heart Buttons
+// Favorites: outfits marked with a heart, with optional labels
 // =====================================================
 export const FAVORITES_STORAGE_KEY = "weari_favorite_outfits";
-let activeFavFilter = "all";
 let pendingFavOutfit = null;
+// The label pop-up either favorites an outfit or just labels a saved outfit
+let labelSheetMode = "favorite";
 
 export function getFavoriteOutfits() {
   try {
@@ -27,7 +30,7 @@ export function getFavoriteOutfits() {
   return [];
 }
 
-function saveFavoriteOutfits(list) {
+export function saveFavoriteOutfits(list) {
   try {
     kv.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(list));
   } catch {}
@@ -35,8 +38,7 @@ function saveFavoriteOutfits(list) {
 
 export function isOutfitFavorite(outfitId) {
   if (!outfitId) return false;
-  const list = getFavoriteOutfits();
-  return list.some((f) => f.id === outfitId);
+  return getFavoriteOutfits().some((f) => f.id === outfitId);
 }
 
 export function toggleFavoriteOutfit(outfit) {
@@ -48,89 +50,88 @@ export function toggleFavoriteOutfit(outfit) {
     saveFavoriteOutfits(list);
     toast("Removed from favorites");
     renderSavedOutfits();
-    renderFavorites(activeFavFilter);
+    renderFavorites();
     return false;
-  } else {
-    promptFavoriteOutfit(outfit);
-    return true;
   }
+  promptFavoriteOutfit(outfit);
+  return true;
 }
 
 export function promptFavoriteOutfit(outfit) {
+  openOutfitLabelSheet(outfit, "favorite");
+}
+
+// mode "favorite": save to Favorites with a label · mode "saved": just label a saved outfit
+export function openOutfitLabelSheet(outfit, mode) {
   pendingFavOutfit = outfit;
-  const sheet = $("#fav-label-sheet");
-  const backdrop = $("#fav-label-backdrop");
-  const input = $("#fav-custom-label");
-  if (input) input.value = outfit.label || "";
-  document.querySelectorAll(".fav-preset-chip").forEach((c) => c.classList.remove("selected"));
-  if (sheet) sheet.hidden = false;
-  if (backdrop) backdrop.hidden = false;
+  labelSheetMode = mode;
+  labelState.sheetSelected = outfit.label || "";
+  const isFav = mode === "favorite";
+  $("#fav-label-title").textContent = isFav ? "Favorite look ❤️" : "Label outfit";
+  $("#fav-label-sub").textContent = isFav ? "Add an optional label to organize this outfit" : `Pick a label for "${outfit.name}"`;
+  $("#btn-save-fav-label").textContent = isFav ? "Save favorite" : "Save label";
+  $("#btn-skip-fav-label").textContent = isFav ? "Save without label" : "Remove label";
+  renderFavLabelPresets();
+  $("#fav-label-sheet").hidden = false;
+  $("#fav-label-backdrop").hidden = false;
+}
+
+export function renderFavLabelPresets() {
+  const box = $("#fav-label-presets");
+  if (!box) return;
+  box.innerHTML = labelChipsHtml({
+    selected: labelState.sheetSelected,
+    attr: "data-label-preset",
+    chipClass: "fav-preset-chip",
+    extra: labelState.sheetSelected ? [labelState.sheetSelected] : [],
+  });
 }
 
 function closeFavLabelSheet() {
-  const sheet = $("#fav-label-sheet");
-  const backdrop = $("#fav-label-backdrop");
-  if (sheet) sheet.hidden = true;
-  if (backdrop) backdrop.hidden = true;
+  $("#fav-label-sheet").hidden = true;
+  $("#fav-label-backdrop").hidden = true;
   pendingFavOutfit = null;
 }
 
 $("#fav-label-close")?.addEventListener("click", closeFavLabelSheet);
 $("#fav-label-backdrop")?.addEventListener("click", closeFavLabelSheet);
 
-document.querySelectorAll(".fav-preset-chip").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".fav-preset-chip").forEach((b) => b.classList.toggle("selected", b === btn));
-    const input = $("#fav-custom-label");
-    if (input) input.value = btn.dataset.labelPreset;
-  });
+$("#fav-label-presets")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) return openLabelManager();
+  const btn = e.target.closest("[data-label-preset]");
+  if (!btn) return;
+  const value = btn.dataset.labelPreset;
+  labelState.sheetSelected = labelState.sheetSelected.toLowerCase() === value.toLowerCase() ? "" : value;
+  renderFavLabelPresets();
 });
 
-$("#btn-save-fav-label")?.addEventListener("click", () => {
+function commitOutfitLabel(label) {
   if (!pendingFavOutfit) return;
-  const customInput = $("#fav-custom-label");
-  const selectedPreset = document.querySelector(".fav-preset-chip.selected")?.dataset.labelPreset;
-  const label = (customInput && customInput.value.trim()) || selectedPreset || "";
+  if (labelSheetMode === "saved") {
+    const list = getSavedOutfits();
+    const target = list.find((o) => o.id === pendingFavOutfit.id);
+    if (target) target.label = label;
+    saveSavedOutfits(list);
+    closeFavLabelSheet();
+    renderSavedOutfits();
+    toast(label ? `Labeled ${labelDisplay(label)}` : "Label removed");
+    return;
+  }
 
   const list = getFavoriteOutfits();
   const idx = list.findIndex((f) => f.id === pendingFavOutfit.id);
-  const favObj = {
-    ...pendingFavOutfit,
-    label,
-    favoritedAt: Date.now(),
-  };
-  if (idx >= 0) {
-    list[idx] = favObj;
-  } else {
-    list.unshift(favObj);
-  }
+  const favObj = { ...pendingFavOutfit, label, favoritedAt: Date.now() };
+  if (idx >= 0) list[idx] = favObj;
+  else list.unshift(favObj);
   saveFavoriteOutfits(list);
   closeFavLabelSheet();
   renderSavedOutfits();
-  renderFavorites(activeFavFilter);
-  toast(`Saved to favorites ${label ? `(${label}) ` : ""}❤️`);
-});
+  renderFavorites();
+  toast(`Saved to favorites ${label ? `(${labelDisplay(label)}) ` : ""}❤️`);
+}
 
-$("#btn-skip-fav-label")?.addEventListener("click", () => {
-  if (!pendingFavOutfit) return;
-  const list = getFavoriteOutfits();
-  const idx = list.findIndex((f) => f.id === pendingFavOutfit.id);
-  const favObj = {
-    ...pendingFavOutfit,
-    label: "",
-    favoritedAt: Date.now(),
-  };
-  if (idx >= 0) {
-    list[idx] = favObj;
-  } else {
-    list.unshift(favObj);
-  }
-  saveFavoriteOutfits(list);
-  closeFavLabelSheet();
-  renderSavedOutfits();
-  renderFavorites(activeFavFilter);
-  toast("Saved to favorites ❤️");
-});
+$("#btn-save-fav-label")?.addEventListener("click", () => commitOutfitLabel(labelState.sheetSelected));
+$("#btn-skip-fav-label")?.addEventListener("click", () => commitOutfitLabel(""));
 
 // Manual outfit builder favorite button
 $("#btn-manual-fav")?.addEventListener("click", () => {
@@ -141,37 +142,36 @@ $("#btn-manual-fav")?.addEventListener("click", () => {
   }
   const nameInput = $("#manual-outfit-name");
   const name = nameInput && nameInput.value.trim() ? nameInput.value.trim() : "Custom combination";
-  const outfit = {
+  promptFavoriteOutfit({
     id: "outfit_fav_" + Date.now(),
     name,
     occasion: "casual",
     createdAt: Date.now(),
     items: activePieces,
-  };
-  promptFavoriteOutfit(outfit);
+    label: labelState.manual,
+  });
 });
 
 // Render favorites section
-export function renderFavorites(filter = activeFavFilter) {
-  activeFavFilter = filter;
+export function renderFavorites(filter = labelState.favFilter) {
+  labelState.favFilter = filter;
   const container = $("#favorites-list");
   if (!container) return;
 
-  // Filter chips
-  document.querySelectorAll("#fav-label-filters [data-fav-filter]").forEach((b) => {
-    b.classList.toggle("selected", b.dataset.favFilter.toLowerCase() === filter.toLowerCase());
-  });
-
   const list = getFavoriteOutfits();
-  const filtered = list.filter((f) => {
-    if (filter === "all") return true;
-    return (f.label || "").toLowerCase() === filter.toLowerCase();
-  });
+
+  // Filter chips: All, built-in, my labels, then any other label already on an outfit
+  const chipsBox = $("#fav-label-filters");
+  if (chipsBox) {
+    chipsBox.innerHTML = labelChipsHtml({ selected: filter, attr: "data-fav-filter", withAll: true, extra: list.map((f) => f.label) });
+  }
+
+  const filtered = list.filter((f) => filter === "all" || (f.label || "").toLowerCase() === filter.toLowerCase());
 
   if (filtered.length === 0) {
     container.innerHTML = `
-      <div style="text-align:center; padding:30px 10px; color:var(--muted);">
-        <p style="font-size:14px; margin:0 0 10px;">No favorites saved${filter !== "all" ? ` under "${filter}"` : ""} yet.</p>
+      <div class="favorites-empty">
+        <p>No favorites saved${filter !== "all" ? ` under "${escapeHtml(labelDisplay(filter))}"` : ""} yet.</p>
         <small>Tap the heart on any saved outfit or styled look to add it here.</small>
       </div>`;
     return;
@@ -179,25 +179,15 @@ export function renderFavorites(filter = activeFavFilter) {
 
   container.innerHTML = filtered
     .map(
-      (f) => `
-    <article class="fav-outfit-card" data-fav-id="${f.id}">
-      <div class="fav-card-header">
-        <div class="fav-card-title-group">
-          <h4 class="fav-card-title">${escapeHtml(f.name)}</h4>
-          ${f.label ? `<span class="fav-card-label-tag">${escapeHtml(f.label)}</span>` : ""}
-        </div>
-        <button type="button" class="fav-heart-btn active" data-unfav-id="${f.id}" title="Remove from favorites">♥</button>
-      </div>
-      <div class="fav-strip">
-        ${(f.items || []).map((it) => `<img class="fav-strip-img" src="${it.photo}" alt="${describeHtml(it)}" title="${describeHtml(it)}" />`).join("")}
-      </div>
-      <div class="fav-card-actions">
-        <button type="button" class="btn-primary" style="padding:10px 18px; font-size:13px;" data-wear-fav="${f.id}">
-          ✓ I wore this
-        </button>
-        <button type="button" class="btn-secondary" style="padding:10px 18px; font-size:13px;" data-edit-fav-label="${f.id}">
-          Edit label
-        </button>
+      (f, i) => `
+    <article class="collage-tile-wrap fav-tile" data-fav-id="${escapeHtml(f.id)}">
+      ${collageTileHtml((f.items || []).map((it) => it.photo), i)}
+      <button type="button" class="fav-heart-btn active fav-tile-heart" data-unfav-id="${escapeHtml(f.id)}" title="Remove from favorites">♥</button>
+      <h4 class="collage-name">${escapeHtml(f.name)}</h4>
+      ${f.label ? `<span class="fav-card-label-tag">${escapeHtml(labelDisplay(f.label))}</span>` : ""}
+      <div class="fav-tile-actions">
+        <button type="button" class="fav-tile-action" data-wear-fav="${escapeHtml(f.id)}">✓ Wore it</button>
+        <button type="button" class="fav-tile-action" data-edit-fav-label="${escapeHtml(f.id)}">Label</button>
       </div>
     </article>`
     )
@@ -208,10 +198,8 @@ export function renderFavorites(filter = activeFavFilter) {
 $("#favorites-list")?.addEventListener("click", async (e) => {
   const unfavBtn = e.target.closest("[data-unfav-id]");
   if (unfavBtn) {
-    const id = unfavBtn.dataset.unfavId;
-    const list = getFavoriteOutfits().filter((f) => f.id !== id);
-    saveFavoriteOutfits(list);
-    renderFavorites(activeFavFilter);
+    saveFavoriteOutfits(getFavoriteOutfits().filter((f) => f.id !== unfavBtn.dataset.unfavId));
+    renderFavorites();
     renderSavedOutfits();
     toast("Removed from favorites");
     return;
@@ -219,22 +207,19 @@ $("#favorites-list")?.addEventListener("click", async (e) => {
 
   const editLabelBtn = e.target.closest("[data-edit-fav-label]");
   if (editLabelBtn) {
-    const id = editLabelBtn.dataset.editFavLabel;
-    const fav = getFavoriteOutfits().find((f) => f.id === id);
+    const fav = getFavoriteOutfits().find((f) => f.id === editLabelBtn.dataset.editFavLabel);
     if (fav) promptFavoriteOutfit(fav);
     return;
   }
 
   const wearBtn = e.target.closest("[data-wear-fav]");
   if (wearBtn) {
-    const id = wearBtn.dataset.wearFav;
-    const fav = getFavoriteOutfits().find((f) => f.id === id);
+    const fav = getFavoriteOutfits().find((f) => f.id === wearBtn.dataset.wearFav);
     if (!fav) return;
 
     const allItems = await getAllItems();
     const map = new Map(allItems.map((it) => [it.id, it]));
     const nowIso = new Date().toISOString();
-
     for (const piece of fav.items || []) {
       const it = map.get(piece.id);
       if (it) {
@@ -250,12 +235,12 @@ $("#favorites-list")?.addEventListener("click", async (e) => {
     toast(`Logged wear for "${fav.name}" ✨`);
     renderWardrobe();
     renderInsights();
-    return;
   }
 });
 
 // Favorites filter chips click listener
 $("#fav-label-filters")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) return openLabelManager();
   const chip = e.target.closest("[data-fav-filter]");
   if (!chip) return;
   renderFavorites(chip.dataset.favFilter);

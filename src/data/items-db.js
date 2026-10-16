@@ -124,6 +124,7 @@ export function normalizeOutfit(raw, allItems = []) {
   const occasion = raw.occasion || "casual";
   const createdAt = Number(raw.createdAt || raw.created_at) || Date.now();
   const notes = raw.notes || raw.explanation || "";
+  const label = raw.name || raw.title ? String(raw.label || "") : "";
 
   const rawPieces = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.pieces) ? raw.pieces : [];
   const items = rawPieces.map((p) => {
@@ -134,7 +135,7 @@ export function normalizeOutfit(raw, allItems = []) {
     return p;
   });
 
-  return { id, name, occasion, items, createdAt, notes };
+  return { id, name, occasion, items, createdAt, notes, label };
 }
 
 export function normalizeRequest(raw) {
@@ -146,6 +147,11 @@ export function normalizeRequest(raw) {
     status: raw.status || "pending",
     createdAt: Number(raw.createdAt || raw.created_at) || Date.now(),
     listing: raw.listing || null,
+    // Demo swap fields (simulated acceptance and chat); absent on older requests
+    ...(raw.demo && { demo: true }),
+    ...(raw.acceptedAt && { acceptedAt: Number(raw.acceptedAt) }),
+    ...(raw.offeredName && { offeredName: String(raw.offeredName) }),
+    ...(Array.isArray(raw.messages) && { messages: raw.messages }),
   };
 }
 

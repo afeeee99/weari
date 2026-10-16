@@ -17,3 +17,4 @@ export {
 export { forgetSyncState, getSyncStatus, startSync, stopSync, wipeCloudData } from "./sync.js";
 export { cancelSwapRequest, sendSwapRequest, setSwapRequestStatus, watchListings, watchSwapRequests } from "./community.js";
 export { uploadPhoto, withCloudPhotos } from "./photos.js";
+export * as friends from "./friends.js";

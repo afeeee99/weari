@@ -77,6 +77,11 @@
       </button>
       <div id="saved-for-later" class="saved-later" hidden></div>
 
+      <button type="button" class="my-rewear-link" data-go="my-rewear">
+        <span>♻️ <strong>My Rewear</strong> <small>Selling, swapping and donating</small></span>
+        <span aria-hidden="true">›</span>
+      </button>
+
       <div class="filters" id="filters"></div>
 
       <!-- Quick-Add banner shown after saving an item with Scan another button -->
@@ -103,6 +108,21 @@
           </div>
           <button type="button" id="btn-profile-start" class="btn-secondary profile-card-start">Start</button>
           <button type="button" id="btn-profile-dismiss" class="profile-card-close" aria-label="Dismiss">✕</button>
+        </div>
+
+        <!-- Optional Google sign-in (guest mode keeps working without it) -->
+        <div class="auth-block" data-auth-block="prompt">
+          <div class="auth-guest" data-auth-guest>
+            <button type="button" class="btn-google" data-google-signin><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg><span>Continue with Google</span></button>
+            <button type="button" class="btn-link-action auth-guest-btn" data-auth-open="signin">Use email instead</button>
+            <button type="button" class="btn-link-action auth-guest-btn" data-continue-guest>Continue as guest</button>
+            <p class="auth-msg" data-auth-msg hidden></p>
+          </div>
+          <div class="auth-signed" data-auth-signed hidden>
+            <img class="auth-photo" data-auth-photo alt="" referrerpolicy="no-referrer" hidden />
+            <span class="auth-signed-text">Signed in as <strong data-auth-name></strong></span>
+            <button type="button" class="btn-link-action" data-google-signout>Sign out</button>
+          </div>
         </div>
 
         <div class="profile-card-body" id="profile-card-body">
@@ -331,6 +351,11 @@
           <input type="text" id="manual-outfit-name" class="text-input" placeholder="e.g. Saturday Coffee Run, Summer Wedding" maxlength="60" />
         </div>
 
+        <div class="field-group">
+          <span class="field-label">Label <span class="hint">(optional)</span></span>
+          <div class="label-chip-row" id="manual-label-chips"></div>
+        </div>
+
         <!-- Arranged Outfit Slots Canvas -->
         <div class="outfit-canvas">
           <div class="canvas-header">
@@ -421,6 +446,7 @@
         <!-- Saved Outfits Gallery -->
         <div class="saved-outfits-section" id="saved-outfits-section">
           <h3 class="section-title">Saved outfits</h3>
+          <div class="fav-label-filters" id="saved-label-filters"></div>
           <div id="saved-outfits-list" class="saved-outfits-list"></div>
         </div>
       </div>
@@ -435,12 +461,7 @@
         </div>
 
         <!-- Label filter chips -->
-        <div class="fav-label-filters" id="fav-label-filters">
-          <button type="button" class="chip selected" data-fav-filter="all">All</button>
-          <button type="button" class="chip" data-fav-filter="Work">Work</button>
-          <button type="button" class="chip" data-fav-filter="Gym">Gym</button>
-          <button type="button" class="chip" data-fav-filter="Weekend">Weekend</button>
-        </div>
+        <div class="fav-label-filters" id="fav-label-filters"></div>
 
         <div id="favorites-list" class="favorites-list"></div>
       </div>
@@ -461,13 +482,28 @@
           </label>
         </div>
 
-        <!-- Horizontal strip of Monday to Sunday day cards -->
+        <div class="segmented plan-view-toggle" id="plan-view-toggle" role="tablist">
+          <button type="button" class="seg active" data-plan-view="week">Week</button>
+          <button type="button" class="seg" data-plan-view="month">Month</button>
+        </div>
+
+        <div class="plan-month-nav" id="plan-month-nav" hidden>
+          <button type="button" class="plan-month-arrow" data-plan-month-step="-1" aria-label="Previous month">‹</button>
+          <strong id="plan-month-label"></strong>
+          <button type="button" class="plan-month-arrow" data-plan-month-step="1" aria-label="Next month">›</button>
+        </div>
+
+        <!-- Week: 7 compact day cells. Month: calendar grid. Tap a day to open it. -->
         <div class="plan-days-strip" id="plan-days-strip"></div>
       </div>
     </section>
     <!-- ============ SWAP SCREEN ============ -->
     <section id="screen-swap" class="screen" hidden>
       <h2 class="screen-title">Rewear <span class="subtitle">Swap with the community</span></h2>
+      <button type="button" class="my-rewear-link" data-go="friends">
+        <span>👯 <strong>Friends</strong> <small>Borrow and swap with people you know</small></span>
+        <span aria-hidden="true">›</span>
+      </button>
 
       <div class="segmented" id="swap-tabs">
         <button class="seg active" data-swap-tab="feed">Feed</button>
@@ -475,7 +511,7 @@
         <button class="seg" data-swap-tab="requests">Requests</button>
       </div>
 
-      <div id="swap-feed"></div>
+      <div id="swap-feed" class="swap-feed"></div>
       <div id="swap-listings" hidden></div>
       <div id="swap-requests" hidden></div>
     </section>
@@ -507,6 +543,18 @@
       <div class="bb-stats">
         <div class="bb-stat"><strong id="stat-purchases-avoided">0</strong><span>Purchases avoided</span></div>
         <div class="bb-stat"><strong id="stat-considered">0</strong><span>Considered, not bought</span></div>
+      </div>
+
+      <!-- Rewear counts (sold, donated, swapped) -->
+      <div class="card-heading-group">
+        <h3 class="section-heading">Rewear</h3>
+        <p class="section-sub">Pieces that found a new home</p>
+      </div>
+      <div class="bb-stats">
+        <div class="bb-stat"><strong id="stat-rewear-sold">0</strong><span>Sold</span></div>
+        <div class="bb-stat"><strong id="stat-rewear-donated">0</strong><span>Donated</span></div>
+        <div class="bb-stat"><strong id="stat-rewear-swapped">0</strong><span>Swapped</span></div>
+        <div class="bb-stat"><strong id="stat-rewear-earned">LKR 0</strong><span>Earned (simulated)</span></div>
       </div>
 
       <!-- Wardrobe usage (30 days) -->
@@ -675,6 +723,11 @@
         </div>
       </div>
 
+      <button type="button" class="my-rewear-link" data-go="friends">
+        <span>👯 <strong>Friends</strong> <small>Borrow and swap with people you know</small></span>
+        <span aria-hidden="true">›</span>
+      </button>
+
       <!-- My Style Card -->
       <div class="profile-card-section" id="profile-my-style-card">
         <div class="profile-section-header">
@@ -760,6 +813,120 @@
           🔒 Your wardrobe is saved on this device, and in your account when you sign in.
         </p>
       </div>
+    </section>
+    <!-- ============ REWEAR: SELL ============ -->
+    <section id="screen-rewear-sell" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="wardrobe">‹ Closet</button>
+      <h2 class="screen-title">Sell</h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      <div class="rewear-item" id="sell-item"></div>
+      <form id="sell-form" class="rewear-form" autocomplete="off">
+        <p class="rewear-ai-status" id="sell-ai-status"></p>
+        <div class="field-group">
+          <label for="sell-title" class="field-label">Title</label>
+          <input type="text" id="sell-title" class="text-input" maxlength="60" required />
+        </div>
+        <div class="field-group">
+          <label for="sell-description" class="field-label">Description</label>
+          <textarea id="sell-description" class="text-input rewear-textarea" rows="4" maxlength="400" required></textarea>
+        </div>
+        <div class="field-group">
+          <label for="sell-price" class="field-label">Price</label>
+          <div class="price-input">
+            <span class="price-currency">LKR</span>
+            <input type="number" id="sell-price" class="text-input" inputmode="numeric" min="1" max="1000000" step="1" placeholder="2500" required />
+          </div>
+        </div>
+        <p class="error" id="sell-error" hidden></p>
+        <button type="submit" class="btn-primary btn-block" id="sell-submit">List</button>
+      </form>
+    </section>
+
+    <!-- ============ REWEAR: SWAP ============ -->
+    <section id="screen-rewear-swap" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="wardrobe">‹ Closet</button>
+      <h2 class="screen-title">Swap</h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      <div class="rewear-item" id="swap-item"></div>
+      <p class="rewear-copy">Put this piece on the community swap feed. People can offer one of their items in exchange, and you'll see their requests in My Rewear.</p>
+      <button type="button" class="btn-primary btn-block" id="swap-item-submit">List for swap</button>
+    </section>
+
+    <!-- ============ REWEAR: DONATE ============ -->
+    <section id="screen-rewear-donate" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="wardrobe">‹ Closet</button>
+      <h2 class="screen-title">Donate</h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      <div class="rewear-item" id="donate-item"></div>
+      <span class="field-label">Choose a donation center</span>
+      <p class="rewear-copy rewear-copy-tight">These are examples, not real partner centers yet.</p>
+      <div class="donate-centers" id="donate-centers"></div>
+      <button type="button" class="btn-primary btn-block" id="donate-submit" disabled>Mark as donated</button>
+    </section>
+
+    <!-- ============ FRIENDS (signed-in only; guests never touch Firestore) ============ -->
+    <section id="screen-friends" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="swap">‹ Swap</button>
+      <h2 class="screen-title">Friends <span class="subtitle">Borrow and swap with people you know</span></h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+
+      <div id="friends-guest">
+        <p class="rewear-copy">Friends needs an account so your friends can find you. Everything else in Weari keeps working as a guest, and your wardrobe stays on this device.</p>
+        <div class="auth-block" data-auth-block="friends">
+          <div class="auth-guest" data-auth-guest>
+            <button type="button" class="btn-google" data-google-signin><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg><span>Continue with Google</span></button>
+            <button type="button" class="btn-link-action auth-guest-btn" data-auth-open="signin">Use email instead</button>
+            <button type="button" class="btn-link-action auth-guest-btn" data-continue-guest>Continue as guest</button>
+            <p class="auth-msg" data-auth-msg hidden></p>
+          </div>
+          <div class="auth-signed" data-auth-signed hidden>
+            <img class="auth-photo" data-auth-photo alt="" referrerpolicy="no-referrer" hidden />
+            <span class="auth-signed-text">Signed in as <strong data-auth-name></strong></span>
+            <button type="button" class="btn-link-action" data-google-signout>Sign out</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="friends-signed" hidden>
+        <div class="segmented" id="friends-tabs">
+          <button type="button" class="seg active" data-friends-tab="feed">Feed</button>
+          <button type="button" class="seg" data-friends-tab="people">Friends</button>
+          <button type="button" class="seg" data-friends-tab="requests">Requests</button>
+        </div>
+        <p class="auth-msg friends-status" id="friends-status" hidden></p>
+
+        <div id="friends-feed"></div>
+
+        <div id="friends-people" hidden>
+          <div class="invite-card">
+            <span class="field-label">My invite code</span>
+            <div class="invite-code-row">
+              <strong class="invite-code" id="my-invite-code">······</strong>
+              <button type="button" class="btn-secondary" id="btn-share-invite">Share link</button>
+            </div>
+          </div>
+          <form class="invite-form" id="invite-form" autocomplete="off">
+            <label for="invite-input" class="field-label">Enter a friend's code</label>
+            <div class="invite-code-row">
+              <input type="text" id="invite-input" class="text-input invite-input" maxlength="6" placeholder="ABC123" autocapitalize="characters" spellcheck="false" />
+              <button type="submit" class="btn-primary">Add</button>
+            </div>
+          </form>
+          <div id="friends-pending"></div>
+          <div id="friends-list"></div>
+        </div>
+
+        <div id="friends-requests" hidden></div>
+      </div>
+    </section>
+
+    <!-- ============ MY REWEAR ============ -->
+    <section id="screen-my-rewear" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="wardrobe">‹ Closet</button>
+      <h2 class="screen-title">My Rewear <span class="subtitle">Your pieces on their way to a new home</span></h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      <div class="rewear-earnings" id="rewear-earnings"></div>
+      <div id="my-rewear-list"></div>
     </section>
   </main>
 
@@ -878,6 +1045,24 @@
 
     <div class="settings-content">
       <div class="settings-section">
+        <h4 class="settings-section-title">Account</h4>
+        <p class="settings-account-note">Optional. Your wardrobe stays on this device either way.</p>
+        <div class="auth-block" data-auth-block="settings">
+          <div class="auth-guest" data-auth-guest>
+            <button type="button" class="btn-google" data-google-signin><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/></svg><span>Continue with Google</span></button>
+            <button type="button" class="btn-link-action auth-guest-btn" data-auth-open="signin">Use email instead</button>
+            <button type="button" class="btn-link-action auth-guest-btn" data-continue-guest>Continue as guest</button>
+            <p class="auth-msg" data-auth-msg hidden></p>
+          </div>
+          <div class="auth-signed" data-auth-signed hidden>
+            <img class="auth-photo" data-auth-photo alt="" referrerpolicy="no-referrer" hidden />
+            <span class="auth-signed-text">Signed in as <strong data-auth-name></strong></span>
+            <button type="button" class="btn-link-action" data-google-signout>Sign out</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <h4 class="settings-section-title">Your Style Profile</h4>
         <div class="settings-profile-summary" id="settings-profile-summary">
           <p class="settings-empty-profile">No style answers saved yet.</p>
@@ -920,27 +1105,70 @@
     <div class="sheet-handle"></div>
     <div class="sheet-header">
       <div>
-        <h3>Favorite look ❤️</h3>
-        <p>Add an optional label to organize this outfit</p>
+        <h3 id="fav-label-title">Favorite look ❤️</h3>
+        <p id="fav-label-sub">Add an optional label to organize this outfit</p>
       </div>
       <button type="button" class="btn-close" id="fav-label-close">✕</button>
     </div>
     <div class="fav-label-content">
-      <label class="field-label">Quick labels</label>
-      <div class="fav-label-presets">
-        <button type="button" class="fav-preset-chip" data-label-preset="Work">Work</button>
-        <button type="button" class="fav-preset-chip" data-label-preset="Gym">Gym</button>
-        <button type="button" class="fav-preset-chip" data-label-preset="Weekend">Weekend</button>
-      </div>
-      <div class="field-group" style="margin-top:14px;">
-        <label for="fav-custom-label" class="field-label">Custom label <span class="hint">(optional)</span></label>
-        <input type="text" id="fav-custom-label" class="text-input" placeholder="e.g. Date night, Travel, Casual" maxlength="30" />
-      </div>
+      <span class="field-label">Labels</span>
+      <div class="fav-label-presets label-chip-row" id="fav-label-presets"></div>
       <div class="fav-label-actions">
         <button type="button" id="btn-save-fav-label" class="btn-primary btn-block">Save favorite</button>
         <button type="button" id="btn-skip-fav-label" class="btn-link-action btn-block">Save without label</button>
       </div>
     </div>
+  </div>
+
+  <!-- ============ CUSTOM LABELS SHEET (create, rename, delete) ============ -->
+  <div id="label-manager-backdrop" class="sheet-backdrop label-manager-backdrop" hidden></div>
+  <div id="label-manager-sheet" class="sheet label-manager-sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <h3>My labels</h3>
+        <p>Make your own labels like Brunch or Travel</p>
+      </div>
+      <button type="button" class="btn-close" id="label-manager-close">✕</button>
+    </div>
+
+    <form id="label-form" class="label-form" autocomplete="off">
+      <span class="field-label" id="label-form-title">New label</span>
+      <div class="label-form-row">
+        <input type="text" id="label-emoji-input" class="text-input label-emoji-input" placeholder="🏷️" maxlength="8" aria-label="Emoji" />
+        <input type="text" id="label-name-input" class="text-input" placeholder="e.g. Brunch" maxlength="16" aria-label="Label name" />
+      </div>
+      <div class="label-emoji-picks" id="label-emoji-picks"></div>
+      <p class="error" id="label-form-error" hidden></p>
+      <div class="label-form-actions">
+        <button type="submit" class="btn-primary" id="label-form-submit">Add label</button>
+        <button type="button" class="btn-link-action" id="label-form-cancel" hidden>Cancel rename</button>
+      </div>
+    </form>
+
+    <div class="label-confirm" id="label-confirm" hidden>
+      <p id="label-confirm-text"></p>
+      <div class="label-confirm-actions">
+        <button type="button" class="btn-secondary" id="label-confirm-cancel">Cancel</button>
+        <button type="button" class="btn-primary" id="label-confirm-ok">Confirm</button>
+      </div>
+    </div>
+
+    <div class="label-list" id="label-list"></div>
+  </div>
+
+  <!-- ============ PLAN DAY SHEET (opened by tapping a day) ============ -->
+  <div id="plan-day-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="plan-day-sheet" class="sheet plan-day-sheet" hidden role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div>
+        <h3 id="plan-day-title">Monday</h3>
+        <p id="plan-day-sub"></p>
+      </div>
+      <button type="button" class="btn-close" id="plan-day-close">✕</button>
+    </div>
+    <div id="plan-day-body"></div>
   </div>
 
   <!-- ============ PLAN OUTFIT PICKER SHEET ============ -->

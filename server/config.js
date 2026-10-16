@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 export const GEMINI_MODEL = 'gemini-3.8-flash';
 export const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash-lite'; // tried once, only when GEMINI_MODEL answers 503 (busy)
 export const FALLBACK_WAIT_MS = 2000;
-// Shared by every AI endpoint (tag, style, review, chat, buycheck): one counter per visitor and one for the app
+// Shared by every AI endpoint (tag, style, review, chat, buycheck, listing): one counter per visitor and one for the app
 export const PER_VISITOR_DAILY_LIMIT = 40; // AI requests per visitor (IP address) per day
 export const GLOBAL_DAILY_CAP = 600; // AI requests for the whole app per day
 
