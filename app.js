@@ -1000,27 +1000,69 @@ async function renderWardrobe() {
     activeFilter === "all" ? true : activeFilter === "swap" ? it.swappable : it.category === activeFilter
   );
 
-  $("#grid").innerHTML = shown
-    .map(
-      (it) => `
-      <article class="card wardrobe-card" data-card-item-id="${it.id}" tabindex="0" role="button" aria-label="${describe(it)}">
-        <div class="card-media">
-          <img src="${it.photo}" alt="${describe(it)}" loading="lazy" />
+  const grid = $("#grid");
+  if (activeFilter === "all") {
+    // One collage tile per category, made from the newest pieces in it
+    grid.className = "grid collage-grid";
+    grid.innerHTML = CATEGORIES.map((cat) => items.filter((it) => it.category === cat))
+      .map((group, i) => {
+        if (!group.length) return "";
+        const cat = group[0].category;
+        const name = CLOSET_TILE_NAMES[cat] || cat;
+        return `
+        <article class="collage-tile-wrap" data-closet-category="${cat}" tabindex="0" role="button" aria-label="${name}, ${group.length} piece${group.length === 1 ? "" : "s"}">
+          ${collageTileHtml(group.map((it) => it.photo), i)}
+          <h3 class="collage-name">${name}</h3>
+          <span class="collage-count">${group.length} piece${group.length === 1 ? "" : "s"}</span>
+        </article>`;
+      })
+      .join("");
+  } else {
+    grid.className = "grid collage-grid";
+    grid.innerHTML = shown
+      .map(
+        (it, i) => `
+        <article class="collage-tile-wrap wardrobe-card" data-card-item-id="${it.id}" tabindex="0" role="button" aria-label="${describe(it)}">
+          ${collageTileHtml([it.photo], i)}
           ${it.swappable ? `<span class="swap-dot" title="Up for swap"></span>` : ""}
-        </div>
-        <div class="card-body">
-          <h3 class="card-name">${describe(it)}</h3>
-          <div class="card-tags-line">
-            ${it.occasions && it.occasions.length ? it.occasions.map((o) => `<span class="tag">${o}</span>`).join("") : `<span class="tag">casual</span>`}
-          </div>
-        </div>
-      </article>`
-    )
-    .join("");
+          <h3 class="collage-name">${describe(it)}</h3>
+          <span class="collage-count">${(it.occasions && it.occasions.length ? it.occasions : ["casual"]).join(" · ")}</span>
+        </article>`
+      )
+      .join("");
+  }
 
   if (items.length && !shown.length) {
-    $("#grid").innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--muted)">Nothing here yet.</p>`;
+    grid.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--muted)">Nothing here yet.</p>`;
   }
+}
+
+// ---------- Collage tiles (Closet, Favorites) ----------
+const CLOSET_TILE_NAMES = {
+  top: "Tops", bottom: "Bottoms", dress: "Dresses", shoes: "Shoes", outerwear: "Outerwear", accessory: "Accessories",
+};
+const COLLAGE_COLORS = ["sage", "pink", "cognac", "cream"];
+// Where 1 to 4 photos sit on a tile: left %, top %, width %, rotation
+const COLLAGE_LAYOUTS = [
+  [[14, 12, 72, -4]],
+  [[6, 10, 54, -7], [42, 30, 54, 6]],
+  [[4, 6, 50, -8], [46, 10, 50, 7], [22, 44, 52, -3]],
+  [[4, 4, 48, -8], [48, 6, 46, 7], [6, 48, 46, 5], [50, 50, 46, -6]],
+];
+
+function collageTileHtml(photos, colorIndex = 0) {
+  const shown = photos.filter(Boolean).slice(0, 4);
+  const layout = COLLAGE_LAYOUTS[Math.max(0, shown.length - 1)];
+  const color = COLLAGE_COLORS[colorIndex % COLLAGE_COLORS.length];
+  return `
+    <div class="collage-tile collage-${color}">
+      ${shown
+        .map((src, i) => {
+          const [left, top, width, rot] = layout[i];
+          return `<img src="${src}" alt="" loading="lazy" style="left:${left}%;top:${top}%;width:${width}%;transform:rotate(${rot}deg)" />`;
+        })
+        .join("")}
+    </div>`;
 }
 
 async function openItemDetailSheet(itemId) {
@@ -1088,6 +1130,12 @@ async function openItemDetailSheet(itemId) {
 }
 
 $("#grid").addEventListener("click", async (e) => {
+  const tile = e.target.closest("[data-closet-category]");
+  if (tile) {
+    activeFilter = tile.dataset.closetCategory;
+    renderWardrobe();
+    return;
+  }
   const card = e.target.closest("[data-card-item-id]");
   if (card) {
     openItemDetailSheet(card.dataset.cardItemId);
@@ -1097,6 +1145,13 @@ $("#grid").addEventListener("click", async (e) => {
 
 $("#grid").addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
+    const tile = e.target.closest("[data-closet-category]");
+    if (tile) {
+      e.preventDefault();
+      activeFilter = tile.dataset.closetCategory;
+      renderWardrobe();
+      return;
+    }
     const card = e.target.closest("[data-card-item-id]");
     if (card) {
       e.preventDefault();
@@ -3133,7 +3188,7 @@ async function renderSwap() {
   $("#swap-feed").innerHTML = top
     ? `
       <p class="swap-demo-note">Demo: sample community pieces. Requests and replies are simulated.</p>
-      <div class="swap-deck">
+      <div class="swap-deck collage-${COLLAGE_COLORS[(listings.length - deck.length) % COLLAGE_COLORS.length]}">
         <article class="swap-card" id="swap-card" data-swap-card="${top.id}">
           <div class="swap-card-media">
             <img src="${top.photo}" alt="${escapeHtml(top.title)}" draggable="false" />
@@ -5208,25 +5263,15 @@ function renderFavorites(filter = activeFavFilter) {
 
   container.innerHTML = filtered
     .map(
-      (f) => `
-    <article class="fav-outfit-card" data-fav-id="${f.id}">
-      <div class="fav-card-header">
-        <div class="fav-card-title-group">
-          <h4 class="fav-card-title">${escapeHtml(f.name)}</h4>
-          ${f.label ? `<span class="fav-card-label-tag">${escapeHtml(labelDisplay(f.label))}</span>` : ""}
-        </div>
-        <button type="button" class="fav-heart-btn active" data-unfav-id="${f.id}" title="Remove from favorites">♥</button>
-      </div>
-      <div class="fav-strip">
-        ${(f.items || []).map((it) => `<img class="fav-strip-img" src="${it.photo}" alt="${describe(it)}" title="${describe(it)}" />`).join("")}
-      </div>
-      <div class="fav-card-actions">
-        <button type="button" class="btn-primary" style="padding:10px 18px; font-size:13px;" data-wear-fav="${f.id}">
-          ✓ I wore this
-        </button>
-        <button type="button" class="btn-secondary" style="padding:10px 18px; font-size:13px;" data-edit-fav-label="${f.id}">
-          Edit label
-        </button>
+      (f, i) => `
+    <article class="collage-tile-wrap fav-tile" data-fav-id="${f.id}">
+      ${collageTileHtml((f.items || []).map((it) => it.photo), i)}
+      <button type="button" class="fav-heart-btn active fav-tile-heart" data-unfav-id="${f.id}" title="Remove from favorites">♥</button>
+      <h4 class="collage-name">${escapeHtml(f.name)}</h4>
+      ${f.label ? `<span class="fav-card-label-tag">${escapeHtml(labelDisplay(f.label))}</span>` : ""}
+      <div class="fav-tile-actions">
+        <button type="button" class="fav-tile-action" data-wear-fav="${f.id}">✓ Wore it</button>
+        <button type="button" class="fav-tile-action" data-edit-fav-label="${f.id}">Label</button>
       </div>
     </article>`
     )
@@ -5701,7 +5746,7 @@ function renderWeeklyPlan() {
           aria-label="${day.name}${assigned ? `: ${escapeHtml(assigned.name)}` : ", nothing planned"}">
           <span class="plan-cell-letter">${day.name[0]}</span>
           <span class="plan-cell-date">${date.getDate()}</span>
-          <span class="plan-cell-thumb">${assigned ? planThumbHtml(assigned) : `<span class="plan-cell-empty">+</span>`}</span>
+          <span class="plan-cell-thumb collage-${COLLAGE_COLORS[i % COLLAGE_COLORS.length]}">${assigned ? planThumbHtml(assigned) : `<span class="plan-cell-empty">+</span>`}</span>
           ${isWornToday ? `<span class="plan-cell-worn">✓</span>` : ""}
         </button>`;
     }).join("");
