@@ -4545,7 +4545,9 @@ function renderProfileCard() {
   const card = $("#profile-card");
   if (!card) return;
 
-  const storedProfile = localStorage.getItem(PROFILE_KEY);
+  const stored = readStoredProfile();
+  const storedProfile =
+    stored.completedAt || ["age", "closet", "sustainability", "pieces", "budget"].some((k) => k in stored);
   const isDismissed = localStorage.getItem(PROFILE_DISMISSED_KEY);
 
   if (storedProfile) {
@@ -4585,8 +4587,7 @@ $("#btn-save-profile")?.addEventListener("click", () => {
   const pieces = $("#profile-pills-pieces .profile-pill.selected")?.dataset.val || null;
   const budget = $("#profile-pills-budget .profile-pill.selected")?.dataset.val || null;
 
-  const profile = { age, closet, sustainability, pieces, budget, completedAt: Date.now() };
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  mergeStoredProfile({ age, closet, sustainability, pieces, budget, completedAt: Date.now() });
   awardKarma(25, "Completed style profile");
 
   $("#profile-card-body").hidden = true;
@@ -6115,6 +6116,165 @@ $("#plan-move-days-list")?.addEventListener("click", (e) => {
   toast(`Outfit moved to ${targetDayObj ? targetDayObj.name : "day"} ✨`);
 });
 
+// =====================================================
+// Optional Google sign-in (Firebase Auth, loaded as a module in index.html)
+// Guest mode is the default and keeps working without it. Signing in only
+// fills the profile name, email and photo; the wardrobe stays in this browser.
+// =====================================================
+let authUser = null; // { uid, displayName, email, photoURL } while signed in
+let guestChosen = false; // "Continue as guest" tapped during this visit
+const AUTH_GUEST_MSG = "You're still in guest mode.";
+
+function readStoredProfile() {
+  try {
+    const data = JSON.parse(localStorage.getItem(PROFILE_KEY) || "null");
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+// Merge into weari_user_profile without touching its other fields
+function mergeStoredProfile(fields) {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ ...readStoredProfile(), ...fields }));
+  } catch {}
+}
+
+function saveGoogleProfile(user) {
+  const firstName = (user.displayName || "").trim().split(/\s+/)[0];
+  try {
+    if (firstName) localStorage.setItem(PROFILE_FIRST_NAME_KEY, firstName);
+    if (user.email) localStorage.setItem(PROFILE_EMAIL_KEY, user.email);
+  } catch {}
+  mergeStoredProfile({
+    account: {
+      provider: "google",
+      displayName: user.displayName || "",
+      email: user.email || "",
+      photoURL: user.photoURL || "",
+      signedInAt: Date.now(),
+    },
+  });
+}
+
+function renderAuthBlocks() {
+  document.querySelectorAll("[data-auth-block]").forEach((block) => {
+    const signedIn = Boolean(authUser);
+    block.querySelector("[data-auth-guest]").hidden = signedIn;
+    block.querySelector("[data-auth-signed]").hidden = !signedIn;
+    // The Closet prompt steps aside once someone picks guest mode
+    if (block.dataset.authBlock === "prompt") block.hidden = guestChosen && !signedIn;
+    if (signedIn) {
+      block.querySelector("[data-auth-name]").textContent = authUser.displayName || authUser.email || "Google user";
+      const photo = block.querySelector("[data-auth-photo]");
+      photo.hidden = !authUser.photoURL;
+      if (authUser.photoURL) photo.src = authUser.photoURL;
+    }
+  });
+
+  // Profile avatar: Google photo while signed in, otherwise the initial
+  const avatar = $("#profile-avatar");
+  if (avatar) {
+    let img = avatar.querySelector(".profile-avatar-photo");
+    if (authUser && authUser.photoURL) {
+      if (!img) {
+        img = document.createElement("img");
+        img.className = "profile-avatar-photo";
+        img.alt = "";
+        img.referrerPolicy = "no-referrer";
+        avatar.appendChild(img);
+      }
+      img.src = authUser.photoURL;
+      img.hidden = false;
+    } else if (img) {
+      img.hidden = true;
+    }
+  }
+}
+
+function showAuthMessage(button, text) {
+  const msg = button.closest("[data-auth-block]")?.querySelector("[data-auth-msg]");
+  if (!msg) return toast(text);
+  msg.textContent = text;
+  msg.hidden = false;
+}
+
+async function startGoogleSignIn(button) {
+  if (!window.WeariAuth) {
+    showAuthMessage(button, `Google sign-in isn't available right now. ${AUTH_GUEST_MSG}`);
+    return;
+  }
+  const label = button.querySelector("span");
+  const original = label ? label.textContent : "";
+  button.disabled = true;
+  if (label) label.textContent = "Opening Google…";
+  try {
+    const user = await window.WeariAuth.signIn();
+    if (!user) throw new Error("No user returned");
+    authUser = user;
+    guestChosen = false;
+    saveGoogleProfile(user);
+    renderAuthBlocks();
+    if (!$("#screen-profile").hidden) renderProfileScreen();
+    toast(`Signed in as ${user.displayName || user.email} ✨`);
+  } catch (err) {
+    const code = String((err && err.code) || "");
+    const cancelled = code.includes("popup-closed") || code.includes("cancelled-popup");
+    const blocked = code.includes("popup-blocked");
+    showAuthMessage(
+      button,
+      cancelled
+        ? `Sign-in was cancelled. ${AUTH_GUEST_MSG}`
+        : blocked
+        ? `Your browser blocked the Google popup. ${AUTH_GUEST_MSG}`
+        : `Couldn't sign in with Google. ${AUTH_GUEST_MSG}`
+    );
+  } finally {
+    button.disabled = false;
+    if (label) label.textContent = original;
+  }
+}
+
+async function startGoogleSignOut() {
+  try {
+    if (window.WeariAuth) await window.WeariAuth.signOut();
+  } catch (err) {
+    console.warn("Sign-out failed:", err && err.message);
+  }
+  // Back to guest mode: only the account details go; wardrobe, name and email stay
+  authUser = null;
+  const profile = readStoredProfile();
+  if (profile.account) {
+    delete profile.account;
+    try {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    } catch {}
+  }
+  renderAuthBlocks();
+  if (!$("#screen-profile").hidden) renderProfileScreen();
+  toast("Signed out. You're in guest mode.");
+}
+
+document.addEventListener("click", (e) => {
+  const signIn = e.target.closest("[data-google-signin]");
+  if (signIn) return startGoogleSignIn(signIn);
+  if (e.target.closest("[data-google-signout]")) return startGoogleSignOut();
+  const guest = e.target.closest("[data-continue-guest]");
+  if (guest) {
+    guestChosen = true;
+    renderAuthBlocks();
+    showAuthMessage(guest, "You're using Weari as a guest. Your wardrobe stays on this device.");
+  }
+});
+
+// Firebase reports the signed-in user on load and after sign-in or sign-out
+window.addEventListener("weari-auth", (e) => {
+  authUser = e.detail || null;
+  renderAuthBlocks();
+  if (!$("#screen-profile").hidden) renderProfileScreen();
+});
+
 // ---------- Start ----------
 (async () => {
   buildAddForm();
@@ -6122,6 +6282,7 @@ $("#plan-move-days-list")?.addEventListener("click", (e) => {
   updateKarmaStreak();
   updateKarmaChip();
   renderKarma();
+  renderAuthBlocks();
   showScreen("wardrobe");
 
   // Show onboarding on first time open
