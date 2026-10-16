@@ -36,6 +36,11 @@
       </button>
       <div id="saved-for-later" class="saved-later" hidden></div>
 
+      <button type="button" class="my-rewear-link" data-go="my-rewear">
+        <span>♻️ <strong>My Rewear</strong> <small>Selling, swapping and donating</small></span>
+        <span aria-hidden="true">›</span>
+      </button>
+
       <div class="filters" id="filters"></div>
 
       <!-- Quick-Add banner shown after saving an item with Scan another button -->
@@ -479,6 +484,18 @@
         <div class="bb-stat"><strong id="stat-considered">0</strong><span>Considered, not bought</span></div>
       </div>
 
+      <!-- Rewear counts (sold, donated, swapped) -->
+      <div class="card-heading-group">
+        <h3 class="section-heading">Rewear</h3>
+        <p class="section-sub">Pieces that found a new home</p>
+      </div>
+      <div class="bb-stats">
+        <div class="bb-stat"><strong id="stat-rewear-sold">0</strong><span>Sold</span></div>
+        <div class="bb-stat"><strong id="stat-rewear-donated">0</strong><span>Donated</span></div>
+        <div class="bb-stat"><strong id="stat-rewear-swapped">0</strong><span>Swapped</span></div>
+        <div class="bb-stat"><strong id="stat-rewear-earned">LKR 0</strong><span>Earned (simulated)</span></div>
+      </div>
+
       <!-- Wardrobe usage (30 days) -->
       <div class="usage-card">
         <div class="card-heading-group">
@@ -738,6 +755,64 @@
           🔒 Your wardrobe and profile stay on this device.
         </p>
       </div>
+    </section>
+    <!-- ============ REWEAR: SELL ============ -->
+    <section id="screen-rewear-sell" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="wardrobe">‹ Closet</button>
+      <h2 class="screen-title">Sell</h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      <div class="rewear-item" id="sell-item"></div>
+      <form id="sell-form" class="rewear-form" autocomplete="off">
+        <p class="rewear-ai-status" id="sell-ai-status"></p>
+        <div class="field-group">
+          <label for="sell-title" class="field-label">Title</label>
+          <input type="text" id="sell-title" class="text-input" maxlength="60" required />
+        </div>
+        <div class="field-group">
+          <label for="sell-description" class="field-label">Description</label>
+          <textarea id="sell-description" class="text-input rewear-textarea" rows="4" maxlength="400" required></textarea>
+        </div>
+        <div class="field-group">
+          <label for="sell-price" class="field-label">Price</label>
+          <div class="price-input">
+            <span class="price-currency">LKR</span>
+            <input type="number" id="sell-price" class="text-input" inputmode="numeric" min="1" max="1000000" step="1" placeholder="2500" required />
+          </div>
+        </div>
+        <p class="error" id="sell-error" hidden></p>
+        <button type="submit" class="btn-primary btn-block" id="sell-submit">List</button>
+      </form>
+    </section>
+
+    <!-- ============ REWEAR: SWAP ============ -->
+    <section id="screen-rewear-swap" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="wardrobe">‹ Closet</button>
+      <h2 class="screen-title">Swap</h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      <div class="rewear-item" id="swap-item"></div>
+      <p class="rewear-copy">Put this piece on the community swap feed. People can offer one of their items in exchange, and you'll see their requests in My Rewear.</p>
+      <button type="button" class="btn-primary btn-block" id="swap-item-submit">List for swap</button>
+    </section>
+
+    <!-- ============ REWEAR: DONATE ============ -->
+    <section id="screen-rewear-donate" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="wardrobe">‹ Closet</button>
+      <h2 class="screen-title">Donate</h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      <div class="rewear-item" id="donate-item"></div>
+      <span class="field-label">Choose a donation center</span>
+      <p class="rewear-copy rewear-copy-tight">These are examples, not real partner centers yet.</p>
+      <div class="donate-centers" id="donate-centers"></div>
+      <button type="button" class="btn-primary btn-block" id="donate-submit" disabled>Mark as donated</button>
+    </section>
+
+    <!-- ============ MY REWEAR ============ -->
+    <section id="screen-my-rewear" class="screen rewear-screen" hidden>
+      <button type="button" class="rewear-back" data-go="wardrobe">‹ Closet</button>
+      <h2 class="screen-title">My Rewear <span class="subtitle">Your pieces on their way to a new home</span></h2>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      <div class="rewear-earnings" id="rewear-earnings"></div>
+      <div id="my-rewear-list"></div>
     </section>
   </main>
 

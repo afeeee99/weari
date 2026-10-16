@@ -11,7 +11,7 @@ import { buyingBrain, buyingBrainRules, SHOP_VERDICTS, pairsWith, shopCheck } fr
 const GEMINI_MODEL = 'gemini-3.8-flash';
 const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash-lite'; // tried once, only when GEMINI_MODEL answers 503 (busy)
 const FALLBACK_WAIT_MS = 2000;
-// Shared by every AI endpoint (tag, style, review, chat, buycheck): one counter per visitor and one for the app
+// Shared by every AI endpoint (tag, style, review, chat, buycheck, listing): one counter per visitor and one for the app
 const PER_VISITOR_DAILY_LIMIT = 40; // AI requests per visitor (IP address) per day
 const GLOBAL_DAILY_CAP = 600; // AI requests for the whole app per day
 
@@ -674,6 +674,64 @@ app.post('/api/buycheck', rateLimit, async (req, res) => {
     res.json({ ok: true, source: source(), ...cleanBuycheck(raw, items) });
   } catch (err) {
     sendError(res, '/api/buycheck', err);
+  }
+});
+
+// =====================================================
+// POST /api/listing — a resale title and description for one wardrobe item
+//   body: { item: { name, category, color, occasions, wears } }
+//   reply: { ok, source, title, description }
+//   Exactly one Gemini call, no retries and no fallback model. JSON only.
+// =====================================================
+const LISTING_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    title: { type: Type.STRING, description: 'Short resale title, max 60 characters, e.g. "White linen shirt, relaxed fit"' },
+    description: { type: Type.STRING, description: 'Two or three short, honest sentences for a second-hand listing' },
+  },
+  required: ['title', 'description'],
+};
+
+function mockListing(item) {
+  const name = item.name || `${item.color} ${item.category}`;
+  const occasions = item.occasions.length ? item.occasions.slice(0, 2).join(' and ') : 'everyday';
+  return {
+    title: `${name.charAt(0).toUpperCase()}${name.slice(1)}, pre-loved`,
+    description: `A ${item.color} ${item.category} in good condition, great for ${occasions} wear. Ready for its next wardrobe. (Test mode: this is a mock answer, not a real Gemini response.)`,
+  };
+}
+
+app.post('/api/listing', rateLimit, async (req, res) => {
+  try {
+    const raw = req.body?.item || {};
+    const category = CATEGORIES.includes(raw.category) ? raw.category : null;
+    if (!category) return res.status(400).json({ ok: false, error: 'no_item', message: 'Send one wardrobe item.' });
+    const item = {
+      name: String(raw.name || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+      category,
+      color: COLORS.includes(raw.color) ? raw.color : 'multi',
+      occasions: [...new Set((Array.isArray(raw.occasions) ? raw.occasions : []).filter((o) => OCCASIONS.includes(o)))].slice(0, 3),
+      wears: Math.max(0, Math.min(999, Number(raw.wears) || 0)),
+    };
+
+    const answer = MOCK_GEMINI
+      ? mockListing(item)
+      : await askGemini({
+          allowFallback: false, // listings: exactly one call, no retries
+          schema: LISTING_SCHEMA,
+          contents:
+            "You write second-hand clothing listings for Weari, a rewear and resale app in Sri Lanka.\n" +
+            `Item: ${item.name || '(no name)'} | category: ${item.category} | color: ${item.color} | occasions: ${item.occasions.join(', ') || 'casual'} | times worn: ${item.wears}\n\n` +
+            'Write a short title (max 60 characters) and an honest, warm description of two or three short sentences. ' +
+            'Do not invent brands, sizes, prices or flaws. No emojis, hashtags or contact details.',
+        });
+
+    const title = String(answer?.title || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const description = String(answer?.description || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+    if (!title || !description) throw new Error('Gemini returned an empty listing');
+    res.json({ ok: true, source: source(), title, description });
+  } catch (err) {
+    sendError(res, '/api/listing', err);
   }
 });
 
