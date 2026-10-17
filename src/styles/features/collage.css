@@ -1,0 +1,108 @@
+/* Collage tiles: Closet, Favorites, Swap deck, Weekly plan */
+
+/* =====================================================
+   Collage restyle: Closet, Favorites, Swap, Weekly plan
+   Sage and cognac come from the onboarding palette; soft pink and
+   cream are light companions. Cognac is used as a light tint so
+   multiplied photos stay readable.
+===================================================== */
+:root {
+  --tile-sage: var(--ob-sage, #C9D1C8);
+  --tile-pink: #EDD6D1;
+  --tile-cognac: #DDB49B;
+  --tile-cream: #F2E9DA;
+  --tile-serif: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+}
+.collage-sage { background-color: var(--tile-sage); }
+.collage-pink { background-color: var(--tile-pink); }
+.collage-cognac { background-color: var(--tile-cognac); }
+.collage-cream { background-color: var(--tile-cream); }
+
+.collage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 12px;
+}
+.collage-tile-wrap {
+  position: relative;
+  min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+  cursor: pointer; outline: none;
+}
+.collage-tile-wrap:focus-visible .collage-tile { box-shadow: 0 0 0 2px var(--accent); }
+.collage-tile {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  border-radius: 24px;
+  overflow: hidden;
+  isolation: isolate; /* keeps multiply inside the tile */
+  margin-bottom: 6px;
+}
+.collage-tile img {
+  position: absolute;
+  aspect-ratio: 1;
+  height: auto;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.collage-name {
+  margin: 0;
+  font-family: var(--tile-serif);
+  font-size: 20px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-transform: capitalize;
+}
+.collage-count {
+  font-size: 12px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.collage-tile-wrap .swap-dot { position: absolute; top: 12px; right: 12px; left: auto; }
+
+/* Favorites */
+.favorites-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 12px;
+}
+.favorites-list > :only-child:not(.collage-tile-wrap) { grid-column: 1 / -1; }
+.fav-tile { cursor: default; }
+.fav-tile-heart {
+  position: absolute; top: 8px; right: 8px;
+  width: 34px; height: 34px; padding: 0;
+  border-radius: 50%; background: rgba(255,255,255,0.75);
+}
+.fav-tile .fav-card-label-tag { align-self: flex-start; margin-top: 2px; }
+.fav-tile-actions { display: flex; gap: 6px; margin-top: 6px; }
+.fav-tile-action {
+  flex: 1; min-width: 0;
+  padding: 7px 4px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+
+/* Swap: one large rounded card on a colored backdrop */
+.swap-deck {
+  padding: 16px;
+  border-radius: 32px;
+  transition: background-color 0.3s ease;
+}
+.swap-deck .swap-card { border: none; border-radius: 26px; box-shadow: 0 10px 28px rgba(60, 40, 20, 0.14); }
+/* The photo is multiplied onto the backdrop color showing through the card's media area */
+.swap-deck.collage-sage .swap-card-media { background: var(--tile-sage); }
+.swap-deck.collage-pink .swap-card-media { background: var(--tile-pink); }
+.swap-deck.collage-cognac .swap-card-media { background: var(--tile-cognac); }
+.swap-deck.collage-cream .swap-card-media { background: var(--tile-cream); }
+.swap-deck .swap-card-media { isolation: isolate; }
+.swap-deck .swap-card-media img {
+  background: transparent; mix-blend-mode: multiply;
+  max-height: 36vh; max-height: 36dvh; /* card, buttons and tabs stay above the bottom menu */
+}
+.swap-deck .listing-title { font-family: var(--tile-serif); font-size: 24px; font-weight: 600; line-height: 1.15; }
+
+/* Weekly plan: palette thumbnails, multiplied photos */
+.plan-cell { border-radius: 14px; }
+.plan-cell-thumb { border-radius: 10px; isolation: isolate; }
+.plan-cell-thumb img { mix-blend-mode: multiply; }
+.plan-cell-collage { background: transparent; }
+.plan-cell-letter { font-family: var(--tile-serif); font-size: 16px; line-height: 1; }

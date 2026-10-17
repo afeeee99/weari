@@ -1,0 +1,396 @@
+/* Colors, page basics, top bar, tab bar, chips, item cards, pop-up sheet, toast */
+
+/* ---------- Colors & basics ---------- */
+:root {
+  --bg: #faf8f5;
+  --card: #ffffff;
+  --text: #1c1b1a;
+  --muted: #8a857f;
+  --line: #ebe7e1;
+  --accent: #1c1b1a;
+  --accent-soft: #f1ede7;
+  --swap: #2f8f5b;
+  --radius: 16px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: calc(80px + env(safe-area-inset-bottom));
+}
+
+main {
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+button { font: inherit; cursor: pointer; }
+
+/* ---------- App Container (centered phone-width on wide screens) ---------- */
+.app-container {
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  min-height: 100vh;
+  position: relative;
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
+@media (min-width: 431px) {
+  body {
+    background: #f1ede7;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .app-container {
+    box-shadow: 0 0 32px rgba(0, 0, 0, 0.08);
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+}
+
+/* ---------- Top bar ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 10px;
+  background: rgba(250, 248, 245, 0.94);
+  backdrop-filter: blur(12px);
+  box-sizing: border-box;
+}
+/* The logo artwork lives in public/brand/ (weari-mark.svg = hanger + name, weari-logo.svg adds the tagline) */
+.brand-mark { display: block; width: auto; height: 100%; }
+.logo { margin: 0; height: 40px; line-height: 0; }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+.karma-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--card); border: 1px solid var(--line);
+  padding: 5px 11px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; color: var(--text);
+  cursor: pointer; transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.karma-chip:hover { background: #f2ede6; border-color: #ded7ce; }
+.karma-chip-icon { font-size: 13px; line-height: 1; }
+.karma-chip-points { font-weight: 700; font-variant-numeric: tabular-nums; }
+.karma-chip-label { font-size: 11px; color: var(--muted); font-weight: 500; }
+.count { color: var(--muted); font-size: 14px; }
+
+/* ---------- Screens ---------- */
+.screen {
+  padding-bottom: calc(110px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+.screen-title { font-size: 22px; letter-spacing: -0.02em; margin: 8px 0 16px; }
+
+/* ---------- Filter chips (wardrobe) ---------- */
+.filters {
+  display: flex; gap: 8px; overflow-x: auto;
+  padding: 4px 0 14px; margin: 0 -16px; padding-left: 16px; padding-right: 16px;
+  scrollbar-width: none;
+}
+.filters::-webkit-scrollbar { display: none; }
+
+/* ---------- Chips (shared) ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px; text-transform: capitalize;
+  transition: all 0.15s;
+}
+.chip.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ---------- Grid of items ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (min-width: 560px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
+  position: relative;
+  animation: pop 0.25s ease;
+}
+@keyframes pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+
+.wardrobe-card {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.wardrobe-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07), 0 8px 24px rgba(0,0,0,0.06);
+}
+.wardrobe-card:active {
+  transform: scale(0.98);
+}
+
+.card-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: #f4f3f0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card-media img, .card img, .wardrobe-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: contain;
+  background: #f4f3f0;
+}
+
+/* Small dot on the card for items marked up for swap, instead of a text badge */
+.swap-dot {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--swap);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95), 0 1px 3px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+}
+
+.card-body { padding: 10px 12px 12px; min-width: 0; }
+.card-name {
+  font-family: var(--font-serif, "Playfair Display", Georgia, serif);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  margin: 0 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+}
+.card-tags-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.card-tags-line .tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: #5a5550;
+  text-transform: capitalize;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.card-cat { font-weight: 600; font-size: 14px; text-transform: capitalize; }
+.dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.12); flex-shrink: 0; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag {
+  font-size: 11px; padding: 3px 8px; border-radius: 999px;
+  background: var(--accent-soft); color: #5a5550; text-transform: capitalize;
+}
+.swap-badge {
+  position: absolute; top: 8px; left: 8px;
+  background: var(--swap); color: #fff;
+  font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px;
+}
+.delete-btn {
+  position: absolute; top: 8px; right: 8px;
+  width: 28px; height: 28px; border-radius: 50%; border: none;
+  background: rgba(255,255,255,0.9); color: var(--text); font-size: 16px; line-height: 1;
+}
+
+/* Floating round + button on Wardrobe screen */
+.fab-add {
+  position: fixed;
+  right: max(16px, calc((100vw - 430px) / 2 + 16px));
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(160, 82, 45, 0.38), 0 2px 6px rgba(0, 0, 0, 0.12);
+  z-index: 25;
+  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.fab-add:hover {
+  transform: scale(1.06);
+  background: #8e4726;
+  box-shadow: 0 6px 18px rgba(160, 82, 45, 0.45), 0 3px 8px rgba(0, 0, 0, 0.15);
+}
+.fab-add:active {
+  transform: scale(0.94);
+}
+#screen-wardrobe[hidden] .fab-add {
+  display: none !important;
+}
+
+/* ---------- Empty state ---------- */
+.empty { text-align: center; padding: 60px 20px; }
+.empty-icon { font-size: 48px; }
+.empty h2 { margin: 12px 0 4px; font-size: 20px; }
+.empty p { color: var(--muted); margin: 0 0 20px; }
+
+/* ---------- Bottom tab bar ---------- */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  display: flex; justify-content: space-around; gap: 2px;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  background: rgba(255,255,255,0.96); backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  box-sizing: border-box;
+}
+@media (min-width: 431px) {
+  .tabbar {
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+}
+.tab {
+  flex: 1; max-width: 70px; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: none; border: none; color: var(--muted);
+  font-size: 10px; font-weight: 500; padding: 4px 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tab svg { width: 20px; height: 20px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tab.active { color: var(--text); }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: var(--accent); color: #fff;
+  padding: 10px 18px; border-radius: 999px; font-size: 14px; z-index: 30;
+}
+
+/* Bottom sheet pop-up */
+.no-scroll { overflow: hidden; }
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(28,27,26,0.4); z-index: 40; animation: fade 0.2s; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  max-width: 430px; margin: 0 auto; max-height: 85vh; overflow-y: auto;
+  background: var(--bg); border-radius: 24px 24px 0 0;
+  padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+  animation: slide-up 0.25s ease;
+  box-sizing: border-box;
+}
+@keyframes fade { from { opacity: 0; } }
+@keyframes slide-up { from { transform: translateY(100%); } }
+.sheet-handle { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 16px; }
+.sheet-header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.sheet-header img { width: 56px; height: 72px; object-fit: cover; border-radius: 12px; }
+.sheet-header h3 { margin: 0 0 2px; font-size: 18px; }
+.sheet-header p { margin: 0; color: var(--muted); font-size: 14px; }
+.sheet-label { font-weight: 600; font-size: 14px; margin: 0 0 10px; }
+.offer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+.offer-option {
+  background: var(--card); border: 2px solid transparent; border-radius: 14px;
+  padding: 0 0 8px; overflow: hidden; font-size: 12px; text-transform: capitalize; color: var(--text);
+}
+.offer-option img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; margin-bottom: 6px; }
+.offer-option.selected { border-color: var(--accent); }
+.sheet-cancel { display: block; margin: 14px auto 0; }
+.notice.flat { border: none; background: none; padding: 8px 0; }
+
+.success { text-align: center; padding: 12px 0 4px; }
+.success-icon { font-size: 52px; animation: pop 0.35s ease; }
+.success h3 { font-size: 22px; margin: 8px 0 6px; }
+.success p { color: var(--muted); margin: 0 0 22px; line-height: 1.5; }
+
+/* ---------- Wear Tracking on Cards ---------- */
+.card-wear-row {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.btn-worn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--accent-soft);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-worn:hover {
+  background: #e8e3dc;
+}
+.btn-worn:active {
+  transform: scale(0.98);
+}
+.wear-count-tag {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.card-last-worn {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  display: block;
+}
+
+/* ---------- Empty state actions ---------- */
+.empty-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 260px;
+  margin: 16px auto 0;
+}
+@media (min-width: 360px) {
+  .empty-actions {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+
+/* Toasts and karma pop-ups are messages only: let taps reach the buttons underneath */
+.toast, .karma-popup { pointer-events: none; }

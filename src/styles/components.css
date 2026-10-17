@@ -1,0 +1,160 @@
+/* =====================================================
+   Components added with accounts, cloud sync and the community feed
+   ===================================================== */
+
+/* ---------- Buttons ---------- */
+.btn-danger {
+  background: #b3261e; color: #fff; border: none; border-radius: 999px;
+  padding: 12px 22px; font-weight: 600;
+}
+.btn-danger:hover { background: #8f1e18; }
+.link-btn.strong { font-weight: 700; color: var(--text); }
+.grid-empty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 24px 0; }
+
+/* ---------- Confirm dialog (src/core/dialog.js) ---------- */
+.dialog-root { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.dialog-backdrop { position: absolute; inset: 0; background: rgba(28, 27, 26, 0.45); animation: fade 0.15s; }
+.dialog-card {
+  position: relative; width: min(400px, 100%);
+  background: var(--card); border-radius: 22px; padding: 22px 22px 18px;
+  box-shadow: var(--shadow-lg); animation: pop 0.18s ease;
+}
+.dialog-title { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.01em; }
+.dialog-message { margin: 0 0 18px; color: #5a5550; font-size: 14.5px; line-height: 1.5; }
+.dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.dialog-actions > * { flex: 1; }
+
+/* ---------- Account chip (top bar) ---------- */
+.account-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px; height: 34px; padding: 0; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+.account-chip-label { padding: 0 12px; font-size: 13px; font-weight: 600; }
+.account-avatar {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 17px;
+}
+.account-avatar.sm { width: 32px; height: 32px; font-size: 13px; }
+
+/* ---------- Account card (Profile) ---------- */
+.account-card { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.account-card:empty { display: none; }
+.account-card-row { display: flex; align-items: center; gap: 12px; }
+.account-card-row strong { display: block; font-size: 15px; }
+.account-card-row small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.45; margin-top: 2px; }
+.account-card-icon {
+  width: 44px; height: 44px; border-radius: 14px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 20px; background: var(--accent-soft);
+}
+.account-card-who { flex: 1; min-width: 0; }
+.account-card-who small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-card-actions { display: flex; gap: 10px; margin-top: 14px; }
+.account-card-actions > * { flex: 1; }
+
+.sync-status { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--swap); }
+.sync-status:empty { display: none; }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.sync-status[data-status="syncing"] { color: #8a6d1f; }
+.sync-status[data-status="syncing"] .sync-dot { animation: pulse 1s infinite ease-in-out; }
+.sync-status[data-status="offline"], .sync-status[data-status="error"] { color: var(--muted); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+
+/* ---------- Sign-in sheet ---------- */
+.auth-sheet { position: relative; max-width: 420px; margin: 0 auto; padding-top: 4px; }
+.auth-close { position: absolute; top: -4px; right: -6px; }
+.auth-head { text-align: center; margin-bottom: 20px; }
+.auth-logo { height: 48px; margin: 0 auto 6px; }
+.auth-head h3 { margin: 6px 0 6px; font-size: 20px; letter-spacing: -0.01em; }
+.auth-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.btn-google {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 13px 16px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); font-weight: 600; font-size: 15px;
+  box-shadow: var(--shadow-sm); transition: background 0.15s;
+}
+.btn-google:hover { background: #f7f5f2; }
+.btn-google:disabled { opacity: 0.6; }
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--muted); font-size: 12.5px; }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-form .field-label { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.auth-form .text-input { width: 100%; }
+.auth-error { margin: 0; }
+.auth-switch { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 16px; font-size: 13.5px; color: var(--muted); }
+.auth-switch .link-btn { font-weight: 600; color: var(--text); }
+.auth-note { margin: 18px 0 0; text-align: center; font-size: 12px; color: var(--muted); }
+
+/* ---------- Swap: community feed ---------- */
+.swap-banner {
+  display: flex; align-items: center; gap: 14px; justify-content: space-between;
+  margin-bottom: 16px; padding: 14px 16px; border-radius: var(--radius);
+  background: linear-gradient(135deg, #eef4ee, #f6efe6); border: 1px solid #e3e8df;
+}
+.swap-banner strong { display: block; font-size: 15px; }
+.swap-banner small { display: block; color: #5a5550; font-size: 13px; line-height: 1.4; margin-top: 2px; }
+.swap-banner .btn-primary { flex-shrink: 0; padding: 10px 18px; }
+#swap-feed { display: block; }
+#swap-feed > .section-heading, #swap-requests > .section-heading { margin: 22px 0 12px; font-size: 16px; }
+#swap-feed > .section-heading:first-child, #swap-requests > .section-heading:first-child { margin-top: 4px; }
+.sample-badge {
+  position: absolute; top: 8px; right: 8px;
+  background: rgba(255, 255, 255, 0.92); color: #5a5550;
+  font-size: 10.5px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+}
+.sample-inline { font-size: 11px; color: var(--muted); font-weight: 500; }
+.swap-badge.live { background: var(--swap); }
+.swap-listing-note { margin: 0 0 12px; }
+.seg-count.alert { background: var(--brand); color: #fff; }
+.request-note { font-size: 12.5px; color: var(--swap); margin: 2px 0 4px; font-weight: 500; }
+.status-accepted { background: #e8f3ec !important; color: #1f6b43 !important; }
+.status-declined { background: #f4eceb !important; color: #8f1e18 !important; }
+.request-meta .link-btn + .link-btn { margin-left: 2px; }
+
+/* ---------- Profile ---------- */
+.profile-style-empty { font-size: 12.5px; color: var(--muted); margin: 0; }
+
+/* ---------- Screen headers ---------- */
+.screen-head { display: flex; align-items: baseline; gap: 10px; margin: 8px 0 14px; }
+.screen-head .screen-title { margin: 0; }
+.screen-head .count { font-size: 14px; color: var(--muted); }
+
+/* Cards whose photo sits directly in the card: keep the 3:4 photo, show the text under it */
+.card > img { height: auto; }
+
+/* ---------- Profile completion card: compact until "Start" ---------- */
+.profile-card-header { align-items: center; }
+.profile-card-start { display: none; padding: 8px 16px; font-size: 13px; flex-shrink: 0; }
+.profile-card.collapsed { padding-top: 14px; padding-bottom: 14px; }
+.profile-card.collapsed .profile-card-start { display: inline-block; }
+.profile-card.collapsed .profile-card-header { margin-bottom: 0; }
+
+/* ---------- Item detail: photo + details side by side on large screens ---------- */
+@media (min-width: 900px) {
+  .sheet:has(.item-detail-sheet) { width: min(860px, calc(100vw - 64px)); }
+  .item-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  .item-detail-layout .item-detail-media { margin: 0; }
+  .item-detail-layout .item-detail-media img { max-height: 60vh; }
+
+  /* Reading-width screens */
+  #screen-profile, #screen-karma, #screen-insights { max-width: 880px; }
+  .screen-head { margin-top: 0; }
+}
+
+/* ---------- Optional Google sign-in ---------- */
+.auth-block { margin: 12px 0 4px; }
+.auth-guest { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.auth-guest-btn { align-self: center; padding: 6px 10px; font-size: 13px; }
+.auth-msg { margin: 2px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--muted); text-align: center; }
+.auth-signed {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 14px;
+  background: var(--accent-soft);
+}
+.auth-photo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.auth-signed-text { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-account-note { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); }
+.profile-avatar { position: relative; overflow: hidden; }
+.profile-avatar-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }

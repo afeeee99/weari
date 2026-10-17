@@ -1,0 +1,24 @@
+/* =====================================================
+   Weari styles (imported by src/main.js, bundled by Vite)
+   base.css         shared look: colors, cards, chips, buttons, sheet
+   features/*.css   one file per screen
+   layout.css       responsive layout (phone / tablet / desktop)
+   components.css   accounts, dialogs, community feed
+   Order matters: later files override earlier ones.
+   ===================================================== */
+@import "./base.css";
+@import "./features/swap.css";
+@import "./features/insights.css";
+@import "./features/karma.css";
+@import "./features/add-item.css";
+@import "./features/style.css";
+@import "./features/onboarding.css";
+@import "./features/profile.css";
+@import "./features/settings.css";
+@import "./features/item-detail.css";
+@import "./features/outfits.css";
+@import "./features/buying-brain.css";
+@import "./features/rewear.css";
+@import "./features/collage.css";
+@import "./layout.css";
+@import "./components.css";

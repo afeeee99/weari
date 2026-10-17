@@ -15,6 +15,9 @@ const KARMA_CONFIG = {
     SEND_SWAP_REQUEST: 20,
     WEAR_IDLE_ITEM: 25, // not worn in 30 days or never worn before
     REWEAR_OUTFIT: 10,  // re-wearing an outfit instead of buying new
+    SKIP_PURCHASE: 15,  // chose not to buy after a purchase check in Chat
+    SELL_ITEM: 20,      // a listed piece was sold (simulated) instead of thrown away
+    DONATE_ITEM: 20,    // donated a piece to a donation center
   },
   LEVELS: [
     { name: "Closet Curious", minPoints: 0, icon: "🌱" },
@@ -536,6 +539,7 @@ function normalizeOutfit(raw, allItems = []) {
   const occasion = raw.occasion || "casual";
   const createdAt = Number(raw.createdAt || raw.created_at) || Date.now();
   const notes = raw.notes || raw.explanation || "";
+  const label = raw.name || raw.title ? String(raw.label || "") : "";
 
   const rawPieces = Array.isArray(raw.items) ? raw.items : Array.isArray(raw.pieces) ? raw.pieces : [];
   const items = rawPieces.map((p) => {
@@ -546,7 +550,7 @@ function normalizeOutfit(raw, allItems = []) {
     return p;
   });
 
-  return { id, name, occasion, items, createdAt, notes };
+  return { id, name, occasion, items, createdAt, notes, label };
 }
 
 function normalizeRequest(raw) {
@@ -558,6 +562,11 @@ function normalizeRequest(raw) {
     status: raw.status || "pending",
     createdAt: Number(raw.createdAt || raw.created_at) || Date.now(),
     listing: raw.listing || null,
+    // Demo swap fields (simulated acceptance and chat); absent on older requests
+    ...(raw.demo && { demo: true }),
+    ...(raw.acceptedAt && { acceptedAt: Number(raw.acceptedAt) }),
+    ...(raw.offeredName && { offeredName: String(raw.offeredName) }),
+    ...(Array.isArray(raw.messages) && { messages: raw.messages }),
   };
 }
 
@@ -885,17 +894,29 @@ const $ = (sel) => document.querySelector(sel);
 
 function showScreen(name) {
   document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== `screen-${name}`));
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.go === name));
+  // Rewear screens open from the Closet, so the Wardrobe tab stays highlighted
+  const tabName = name.startsWith("rewear-") || name === "my-rewear" ? "wardrobe" : name === "friends" ? "swap" : name;
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.go === tabName));
   window.scrollTo(0, 0);
-  if (name === "wardrobe") renderWardrobe();
+  if (name === "wardrobe") {
+    renderWardrobe();
+    renderSavedForLater();
+  }
   if (name === "style") {
     renderStyleOccasions();
     renderManualOutfit();
+    renderManualLabelChips();
     renderSavedOutfits();
     if (typeof renderFavorites === "function") renderFavorites();
     if (typeof renderWeeklyPlan === "function") renderWeeklyPlan();
+    if (currentStyleMode === "chat") renderChat();
   }
   if (name === "swap") renderSwap();
+  if (name === "rewear-sell") renderSellScreen();
+  if (name === "rewear-swap") renderRewearSwapScreen();
+  if (name === "rewear-donate") renderDonateScreen();
+  if (name === "my-rewear") renderMyRewear();
+  if (name === "friends") renderFriends();
   if (name === "insights") renderInsights();
   if (name === "karma") renderKarma();
   if (name === "profile" && typeof renderProfileScreen === "function") renderProfileScreen();
@@ -923,6 +944,52 @@ let activeFilter = "all";
 
 function colorHex(name) {
   return (COLORS.find((c) => c.name === name) || {}).hex || "#ccc";
+}
+
+// Simple original flat-color drawings for items without a photo (demo pieces, fallbacks).
+// `kind` picks a variant shape: "heel" for dressy shoes, "bag" or "belt" for accessories.
+const PLACEHOLDER_SHAPES = {
+  top: '<path d="M70 50 L100 40 Q120 56 140 40 L170 50 L196 84 L172 98 L162 86 L162 176 L78 176 L78 86 L68 98 L44 84 Z"/>',
+  bottom: '<path d="M80 36 L160 36 L172 184 L132 184 L120 88 L108 184 L68 184 Z"/>',
+  dress: '<path d="M96 34 L144 34 L140 70 L176 186 L64 186 L100 70 Z"/>',
+  outerwear: '<path d="M66 46 L100 36 L120 96 L140 36 L174 46 L198 168 L172 172 L166 112 L166 186 L74 186 L74 112 L68 172 L42 168 Z"/><path d="M120 96 L120 186" stroke="rgba(0,0,0,.18)" stroke-width="4" fill="none"/>',
+  shoes: '<path d="M40 150 L40 118 Q60 104 92 112 L120 128 Q170 132 196 148 L200 168 L40 168 Z"/><rect x="40" y="160" width="160" height="10" rx="4" fill="rgba(0,0,0,.18)"/>',
+  skirt: '<rect x="84" y="38" width="72" height="16" rx="4"/><path d="M86 54 L154 54 L188 184 L52 184 Z"/><path d="M106 66 L94 180 M134 66 L146 180 M120 66 L120 182" stroke="rgba(0,0,0,.14)" stroke-width="4" fill="none"/>',
+  sandal: '<path d="M36 172 Q36 160 58 158 L118 160 Q160 150 194 120 L204 128 Q172 168 128 176 L60 180 Q36 182 36 172 Z"/><rect x="178" y="130" width="20" height="60" rx="4"/><path d="M60 160 Q76 128 100 160 M144 152 Q154 112 196 120 M166 104 Q186 94 204 112" stroke="currentColor" stroke-width="9" stroke-linecap="round" fill="none"/>',
+  heel: '<path d="M50 132 Q90 112 130 136 Q160 150 196 150 L196 162 L132 162 Q100 150 72 162 L64 196 L54 196 L52 160 Z"/><path d="M110 126 L126 112 M140 142 L150 124" stroke="rgba(0,0,0,.25)" stroke-width="5" fill="none"/>',
+  bag: '<path d="M88 92 Q88 50 120 50 Q152 50 152 92" stroke="currentColor" stroke-width="10" fill="none"/><path d="M60 92 L180 92 L168 184 L72 184 Z"/>',
+  belt: '<rect x="30" y="104" width="180" height="32" rx="6"/><rect x="98" y="96" width="44" height="48" rx="6" fill="none" stroke="#c9a54a" stroke-width="8"/>',
+  accessory: '<circle cx="120" cy="120" r="54"/><circle cx="120" cy="120" r="24" fill="#f4f1ec"/>',
+};
+
+// Pick the drawing that matches an item's name, e.g. a "midi skirt" gets a skirt, not trousers
+const PLACEHOLDER_KEYWORDS = [
+  [/\bskirts?\b/, "skirt"],
+  [/\bsandals?\b/, "sandal"],
+  [/\b(heels?|pumps?|stilettos?)\b/, "heel"],
+  [/\b(tote|bag|handbag|clutch|purse|backpack)\b/, "bag"],
+  [/\bbelt\b/, "belt"],
+];
+
+function placeholderKind(item) {
+  const name = String((item && (item.name || item.itemName || item.title)) || "").toLowerCase();
+  const match = PLACEHOLDER_KEYWORDS.find(([re]) => re.test(name));
+  return match ? match[1] : undefined;
+}
+
+// Uploaded photos are kept; generated drawings are redrawn to match the item's name
+function itemIllustration(item, fallbackPhoto) {
+  const photo = fallbackPhoto || "";
+  if (photo && !photo.startsWith("data:image/svg+xml")) return photo;
+  return placeholderImage(item.category, item.color, placeholderKind(item));
+}
+
+function placeholderImage(category, color, kind) {
+  const fill = colorHex(color);
+  const outline = ["white", "beige"].includes(color) ? "#cfc6b8" : "none";
+  const shape = PLACEHOLDER_SHAPES[kind] || PLACEHOLDER_SHAPES[category] || PLACEHOLDER_SHAPES.accessory;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240"><rect width="240" height="240" fill="#f4f1ec"/><g fill="${fill}" color="${fill}" stroke="${outline}" stroke-width="2" stroke-linejoin="round">${shape}</g></svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 
 function renderFilters(items) {
@@ -958,27 +1025,69 @@ async function renderWardrobe() {
     activeFilter === "all" ? true : activeFilter === "swap" ? it.swappable : it.category === activeFilter
   );
 
-  $("#grid").innerHTML = shown
-    .map(
-      (it) => `
-      <article class="card wardrobe-card" data-card-item-id="${it.id}" tabindex="0" role="button" aria-label="${describe(it)}">
-        <div class="card-media">
-          <img src="${it.photo}" alt="${describe(it)}" loading="lazy" />
+  const grid = $("#grid");
+  if (activeFilter === "all") {
+    // One collage tile per category, made from the newest pieces in it
+    grid.className = "grid collage-grid";
+    grid.innerHTML = CATEGORIES.map((cat) => items.filter((it) => it.category === cat))
+      .map((group, i) => {
+        if (!group.length) return "";
+        const cat = group[0].category;
+        const name = CLOSET_TILE_NAMES[cat] || cat;
+        return `
+        <article class="collage-tile-wrap" data-closet-category="${cat}" tabindex="0" role="button" aria-label="${name}, ${group.length} piece${group.length === 1 ? "" : "s"}">
+          ${collageTileHtml(group.map((it) => it.photo), i)}
+          <h3 class="collage-name">${name}</h3>
+          <span class="collage-count">${group.length} piece${group.length === 1 ? "" : "s"}</span>
+        </article>`;
+      })
+      .join("");
+  } else {
+    grid.className = "grid collage-grid";
+    grid.innerHTML = shown
+      .map(
+        (it, i) => `
+        <article class="collage-tile-wrap wardrobe-card" data-card-item-id="${it.id}" tabindex="0" role="button" aria-label="${describe(it)}">
+          ${collageTileHtml([it.photo], i)}
           ${it.swappable ? `<span class="swap-dot" title="Up for swap"></span>` : ""}
-        </div>
-        <div class="card-body">
-          <h3 class="card-name">${describe(it)}</h3>
-          <div class="card-tags-line">
-            ${it.occasions && it.occasions.length ? it.occasions.map((o) => `<span class="tag">${o}</span>`).join("") : `<span class="tag">casual</span>`}
-          </div>
-        </div>
-      </article>`
-    )
-    .join("");
+          <h3 class="collage-name">${describe(it)}</h3>
+          <span class="collage-count">${(it.occasions && it.occasions.length ? it.occasions : ["casual"]).join(" · ")}</span>
+        </article>`
+      )
+      .join("");
+  }
 
   if (items.length && !shown.length) {
-    $("#grid").innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--muted)">Nothing here yet.</p>`;
+    grid.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--muted)">Nothing here yet.</p>`;
   }
+}
+
+// ---------- Collage tiles (Closet, Favorites) ----------
+const CLOSET_TILE_NAMES = {
+  top: "Tops", bottom: "Bottoms", dress: "Dresses", shoes: "Shoes", outerwear: "Outerwear", accessory: "Accessories",
+};
+const COLLAGE_COLORS = ["sage", "pink", "cognac", "cream"];
+// Where 1 to 4 photos sit on a tile: left %, top %, width %, rotation
+const COLLAGE_LAYOUTS = [
+  [[14, 12, 72, -4]],
+  [[6, 10, 54, -7], [42, 30, 54, 6]],
+  [[4, 6, 50, -8], [46, 10, 50, 7], [22, 44, 52, -3]],
+  [[4, 4, 48, -8], [48, 6, 46, 7], [6, 48, 46, 5], [50, 50, 46, -6]],
+];
+
+function collageTileHtml(photos, colorIndex = 0) {
+  const shown = photos.filter(Boolean).slice(0, 4);
+  const layout = COLLAGE_LAYOUTS[Math.max(0, shown.length - 1)];
+  const color = COLLAGE_COLORS[colorIndex % COLLAGE_COLORS.length];
+  return `
+    <div class="collage-tile collage-${color}">
+      ${shown
+        .map((src, i) => {
+          const [left, top, width, rot] = layout[i];
+          return `<img src="${src}" alt="" loading="lazy" style="left:${left}%;top:${top}%;width:${width}%;transform:rotate(${rot}deg)" />`;
+        })
+        .join("")}
+    </div>`;
 }
 
 async function openItemDetailSheet(itemId) {
@@ -1029,6 +1138,8 @@ async function openItemDetailSheet(itemId) {
           </button>
         </div>
 
+        ${rewearSheetSection(it)}
+
         <div class="item-detail-actions">
           <button type="button" class="btn-outline-action" data-sheet-toggle-swap="${it.id}">
             ${it.swappable ? "Remove from swap feed" : "List on Rewear (+15 pts)"}
@@ -1044,6 +1155,12 @@ async function openItemDetailSheet(itemId) {
 }
 
 $("#grid").addEventListener("click", async (e) => {
+  const tile = e.target.closest("[data-closet-category]");
+  if (tile) {
+    activeFilter = tile.dataset.closetCategory;
+    renderWardrobe();
+    return;
+  }
   const card = e.target.closest("[data-card-item-id]");
   if (card) {
     openItemDetailSheet(card.dataset.cardItemId);
@@ -1053,6 +1170,13 @@ $("#grid").addEventListener("click", async (e) => {
 
 $("#grid").addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
+    const tile = e.target.closest("[data-closet-category]");
+    if (tile) {
+      e.preventDefault();
+      activeFilter = tile.dataset.closetCategory;
+      renderWardrobe();
+      return;
+    }
     const card = e.target.closest("[data-card-item-id]");
     if (card) {
       e.preventDefault();
@@ -1090,6 +1214,34 @@ function buildAddForm() {
 let activeTagController = null;
 let pendingSmallPhoto = null;
 
+// Talking to the Weari server (Gemini lives there, never in the browser)
+const STYLIST_BREAK_MSG = "The stylist needs a short break, so this is a basic suggestion.";
+
+async function callApi(path, body, { timeoutMs = 20000, signal } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (signal) signal.addEventListener("abort", () => controller.abort());
+  try {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const TAG_SOURCE_LABELS = {
+  gemini: "Tagged by Gemini",
+  mock: "Auto-tagged (test mode, not real Gemini)",
+  rules: "Auto-tagged (basic rules)",
+};
+
 async function autoTagPhoto(smallPhotoDataUrl) {
   if (activeTagController) {
     activeTagController.abort();
@@ -1113,44 +1265,43 @@ async function autoTagPhoto(smallPhotoDataUrl) {
     statusEl.innerHTML = `<span class="sparkle-icon">✨</span><span>Gemini is looking...</span>`;
   }
 
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, 15000);
-
+  let data;
   try {
-    // Auto-tag client side without Gemini calls
+    const res = await callApi("/api/tag", { image: smallPhotoDataUrl }, { timeoutMs: 15000, signal: controller.signal });
+    data = { source: res.source, data: res.tags };
+  } catch (err) {
+    if (activeTagController !== controller) return; // a newer photo replaced this one
+    console.warn("Gemini auto-tag unavailable, using basic rules:", err.message);
+    // Basic rules: keep what the user already picked, otherwise sensible defaults
     const autoCategory = form.category || "top";
     const autoColor = form.color || "black";
     const autoOccasions = form.occasions.size ? Array.from(form.occasions) : ["casual"];
-    const autoName = `${autoColor.charAt(0).toUpperCase() + autoColor.slice(1)} ${autoCategory}`;
-    const data = {
-      success: true,
+    data = {
+      source: "rules",
       data: {
-        name: autoName,
+        name: `${autoColor.charAt(0).toUpperCase() + autoColor.slice(1)} ${autoCategory}`,
         category: autoCategory,
         color: autoColor,
         occasions: autoOccasions,
-        confidence: 0.95,
       },
     };
+  }
 
-    const { name, category, color, occasions, confidence } = data.data;
+  try {
+    const { name, category, color, occasions } = data.data;
 
     if (statusEl) statusEl.hidden = true;
     if (btnAutotag) btnAutotag.hidden = true;
     if (badgeEl) {
-      badgeEl.innerHTML = `<span class="sparkle-icon">✨</span><span class="tag-badge-text">Tagged by Gemini</span>`;
+      const label = TAG_SOURCE_LABELS[data.source] || TAG_SOURCE_LABELS.rules;
+      badgeEl.innerHTML = `<span class="sparkle-icon">✨</span><span class="tag-badge-text">${label}</span>`;
       badgeEl.hidden = false;
     }
 
-    // Confidence indicator: when low, show "Please double check these tags"
-    if (confidence === "low") {
-      if (hintEl) {
-        hintEl.textContent = "Please double check these tags";
-        hintEl.hidden = false;
-      }
-    } else {
-      if (hintEl) hintEl.hidden = true;
+    // If Gemini couldn't help, say so plainly
+    if (hintEl) {
+      hintEl.textContent = data.source === "rules" ? STYLIST_BREAK_MSG : "";
+      hintEl.hidden = data.source !== "rules";
     }
 
     // Fill only the fields the user hasn't already filled in
@@ -1185,11 +1336,7 @@ async function autoTagPhoto(smallPhotoDataUrl) {
       );
     }
   } catch (err) {
-    clearTimeout(timeoutId);
-    if (controller.signal.aborted && activeTagController !== controller) {
-      return;
-    }
-    console.error("Auto-tag failed or timed out:", err);
+    console.error("Auto-tag failed:", err);
     if (statusEl) statusEl.hidden = true;
     if (btnAutotag) {
       btnAutotag.disabled = false;
@@ -1346,10 +1493,22 @@ function captureAndResizeCameraFrame(video, maxSize = 512, quality = 0.82) {
   return canvas.toDataURL("image/jpeg", quality);
 }
 
-async function startCameraScan() {
+// The same full-screen camera serves Add item ("add") and Buying Brain ("buycheck")
+let cameraPurpose = "add";
+let cameraFlipping = false;
+
+async function startCameraScan(purpose = "add") {
   const modal = $("#camera-modal");
   const video = $("#camera-video");
   const fallbackInput = $("#camera-fallback-file");
+
+  // A fresh scan starts with an empty price (flipping the camera keeps it)
+  if (!cameraFlipping && $("#camera-price")) $("#camera-price").value = "";
+  cameraFlipping = false;
+  cameraPurpose = purpose;
+  const isBuyCheck = purpose === "buycheck";
+  $("#camera-guide-text").textContent = isBuyCheck ? "Point at an item you’re thinking of buying" : "Place one item in the frame";
+  $("#camera-price-wrap").hidden = !isBuyCheck;
 
   resetCameraReviewUI();
 
@@ -1459,20 +1618,26 @@ $("#camera-retake")?.addEventListener("click", () => {
 $("#camera-use-photo")?.addEventListener("click", () => {
   if (!capturedPhoto512) return;
   const photoToUse = capturedPhoto512;
+  const price = $("#camera-price")?.value;
   stopCameraScan();
-  handlePhotoSelected(photoToUse);
+  if (cameraPurpose === "buycheck") runBuyCheck(photoToUse, price);
+  else handlePhotoSelected(photoToUse);
 });
 
 $("#camera-flip")?.addEventListener("click", () => {
   currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
-  startCameraScan();
+  cameraFlipping = true;
+  startCameraScan(cameraPurpose);
 });
 
-$("#camera-fallback-file")?.addEventListener("change", (e) => {
+$("#camera-fallback-file")?.addEventListener("change", async (e) => {
   const file = e.target.files[0];
+  e.target.value = "";
   if (!file) return;
+  const price = $("#camera-price")?.value;
   stopCameraScan();
-  handlePhotoSelected(file);
+  if (cameraPurpose === "buycheck") runBuyCheck(await resizeImage(file, 512, 0.82), price);
+  else handlePhotoSelected(file);
 });
 
 $("#btn-camera-scan")?.addEventListener("click", () => {
@@ -1588,12 +1753,19 @@ $("#btn-scan-another")?.addEventListener("click", () => {
 // =====================================================
 // Style me screen — Dual Modes: AI Stylist & Create your own
 // =====================================================
-let currentStyleMode = "ai";
+let currentStyleMode = "chat";
 let styleOccasion = null;
 let lastOutfitIds = [];
 
 // Saved Custom Outfits Storage
 const SAVED_OUTFITS_KEY = "weari_saved_outfits";
+
+// Outfit labels: built-in ones plus my own, saved under their own key
+const CUSTOM_LABELS_KEY = "weari_custom_labels";
+const BUILTIN_LABELS = ["Work", "Gym", "Weekend"];
+let manualLabel = "";
+let stylistLabel = ""; // label for the current Stylist suggestion
+let activeSavedFilter = "all";
 
 function getSavedOutfits() {
   try {
@@ -1639,6 +1811,11 @@ document.querySelectorAll("#style-mode-tabs [data-style-mode]").forEach((btn) =>
     document.querySelectorAll("#style-mode-tabs [data-style-mode]").forEach((b) =>
       b.classList.toggle("active", b === btn)
     );
+    const chatView = $("#style-mode-chat");
+    if (chatView) {
+      chatView.hidden = currentStyleMode !== "chat";
+      if (currentStyleMode === "chat") renderChat();
+    }
     const aiView = $("#style-mode-ai");
     const manualView = $("#style-mode-manual");
     const favView = $("#style-mode-favorites");
@@ -1858,6 +2035,7 @@ $("#btn-manual-save")?.addEventListener("click", () => {
       photo: it.photo,
     })),
     createdAt: Date.now(),
+    label: manualLabel,
   });
   saveSavedOutfits(saved);
   awardKarma(10, "Saved custom look");
@@ -1892,17 +2070,23 @@ $("#btn-manual-review")?.addEventListener("click", async () => {
   }
 
   try {
-    // Generate thoughtful stylist review client side without Gemini calls
-    const review = `A thoughtful, cohesive look combining ${activePieces.map((p) => describe(p)).join(", ")}. Beautiful color harmony and silhouette for conscious everyday styling.`;
-    const data = { success: true, review };
-
+    // Only category, color and name of each piece are sent (no photos)
+    const items = activePieces.map((it) => ({
+      role: it.category.charAt(0).toUpperCase() + it.category.slice(1),
+      category: it.category,
+      color: it.color,
+      name: plainText(it.name).slice(0, 40),
+    }));
+    const res = await callApi("/api/review", { outfitName, items }, { timeoutMs: 20000 });
+    const label = res.source === "mock" ? "✨ Stylist Review (test mode, not real Gemini)" : "✨ Stylist Review by Gemini";
     if (reviewBox) {
       reviewBox.innerHTML = `
-        <div class="review-header">✨ Stylist Review</div>
-        <p class="review-text">"${escapeHtml(data.review)}"</p>`;
+        <div class="review-header">${label}</div>
+        <p class="review-text">"${escapeHtml(res.review)}"</p>`;
     }
   } catch (err) {
-    const msg = "Our stylist is busy right now, but your outfit looks great! Tap to ask again.";
+    console.warn("Gemini review unavailable:", err.message);
+    const msg = "Our stylist is taking a short break, but your outfit looks great! Tap to ask again in a moment.";
     if (reviewBox) {
       reviewBox.innerHTML = `
         <div class="review-header">✨ Stylist Review</div>
@@ -1921,10 +2105,30 @@ $("#btn-manual-review")?.addEventListener("click", async () => {
 function renderSavedOutfits() {
   const container = $("#saved-outfits-list");
   if (!container) return;
-  const list = getSavedOutfits();
+  const all = getSavedOutfits();
+
+  const chipsBox = $("#saved-label-filters");
+  if (chipsBox) {
+    chipsBox.hidden = all.length === 0;
+    chipsBox.innerHTML = labelChipsHtml({
+      selected: activeSavedFilter,
+      attr: "data-saved-filter",
+      withAll: true,
+      extra: all.map((o) => o.label),
+    });
+  }
+
+  if (all.length === 0) {
+    container.innerHTML = `<p style="font-size:13px; color:var(--muted); margin:0;">No saved outfits yet. Assemble pieces above and tap Save.</p>`;
+    return;
+  }
+
+  const list = activeSavedFilter === "all"
+    ? all
+    : all.filter((o) => (o.label || "").toLowerCase() === activeSavedFilter.toLowerCase());
 
   if (list.length === 0) {
-    container.innerHTML = `<p style="font-size:13px; color:var(--muted); margin:0;">No saved outfits yet. Assemble pieces above and tap Save.</p>`;
+    container.innerHTML = `<p style="font-size:13px; color:var(--muted); margin:0;">No saved outfits under "${escapeHtml(labelDisplay(activeSavedFilter))}" yet.</p>`;
     return;
   }
 
@@ -1933,7 +2137,10 @@ function renderSavedOutfits() {
       (outfit) => `
     <article class="saved-outfit-card" data-outfit-id="${outfit.id}">
       <div class="saved-outfit-header">
-        <h4 class="saved-outfit-title">${escapeHtml(outfit.name)}</h4>
+        <div class="fav-card-title-group">
+          <h4 class="saved-outfit-title">${escapeHtml(outfit.name)}</h4>
+          ${outfit.label ? `<span class="fav-card-label-tag">${escapeHtml(labelDisplay(outfit.label))}</span>` : ""}
+        </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button type="button" class="fav-heart-btn ${isOutfitFavorite(outfit.id) ? "active" : ""}" data-toggle-fav="${outfit.id}" title="Toggle favorite">♥</button>
           <button type="button" class="btn-link-action" data-delete-outfit="${outfit.id}" title="Delete look">Delete</button>
@@ -1945,13 +2152,32 @@ function renderSavedOutfits() {
       <div class="saved-outfit-actions">
         <button type="button" class="btn-card-small primary" data-wear-saved="${outfit.id}">✓ I wore this</button>
         <button type="button" class="btn-card-small" data-load-saved="${outfit.id}">Load into slots</button>
+        <button type="button" class="btn-card-small" data-label-saved="${outfit.id}">Label</button>
       </div>
     </article>`
     )
     .join("");
 }
 
+$("#saved-label-filters")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
+  const chip = e.target.closest("[data-saved-filter]");
+  if (!chip) return;
+  activeSavedFilter = chip.dataset.savedFilter;
+  renderSavedOutfits();
+});
+
 $("#saved-outfits-list")?.addEventListener("click", async (e) => {
+  const labelBtn = e.target.closest("[data-label-saved]");
+  if (labelBtn) {
+    const outfit = getSavedOutfits().find((o) => o.id === labelBtn.dataset.labelSaved);
+    if (outfit) openOutfitLabelSheet(outfit, "saved");
+    return;
+  }
+
   const favBtn = e.target.closest("[data-toggle-fav]");
   if (favBtn) {
     const id = favBtn.dataset.toggleFav;
@@ -2055,6 +2281,82 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
+// The wardrobe as compact text for the server: "id | name | category | color | occasions" (no photos)
+const plainText = (v) => String(v ?? "").replace(/[|\r\n]/g, " ").replace(/\s+/g, " ").trim();
+function wardrobeAsText(items) {
+  return items
+    .map((it) =>
+      [it.id, plainText(it.name).slice(0, 40), it.category, it.color, (it.occasions || []).join(", ")]
+        .map(plainText)
+        .join(" | ")
+    )
+    .join("\n");
+}
+
+// Ask Gemini (via the server) for an outfit. On any problem, use the basic rules in stylist.js.
+async function getOutfitSuggestion(items) {
+  if (!items.length) return suggestOutfit(items, styleOccasion, lastOutfitIds, priorityStyleItemId);
+  try {
+    // getOnboardingPreferences() returns only goal, styles and occasions — no other personal answers
+    const res = await callApi(
+      "/api/style",
+      {
+        occasion: styleOccasion,
+        wardrobe: wardrobeAsText(items),
+        preferences: getOnboardingPreferences() || {},
+        previousOutfitIds: lastOutfitIds,
+        mustIncludeItemId: priorityStyleItemId,
+      },
+      { timeoutMs: 25000 }
+    );
+    if (!res.canFormOutfit) return { missing: res.missing, source: res.source };
+    const byId = new Map(items.map((it) => [String(it.id), it]));
+    const outfit = res.outfit.map((p) => ({ role: p.role, item: byId.get(String(p.itemId)) })).filter((p) => p.item);
+    if (!outfit.length) throw new Error("Suggested items are not in the wardrobe");
+    return { outfit, explanation: res.explanation, source: res.source };
+  } catch (err) {
+    console.warn("Gemini stylist unavailable, using basic rules:", err.message);
+    const basic = await suggestOutfit(items, styleOccasion, lastOutfitIds, priorityStyleItemId);
+    return { ...basic, source: "rules", notice: STYLIST_BREAK_MSG };
+  }
+}
+
+const STYLE_SOURCE_LABELS = {
+  gemini: "✨ Styled by Gemini",
+  mock: "✨ Test mode (not real Gemini)",
+  rules: "Basic suggestion",
+};
+
+// "I wore this": +1 wear for each piece, then karma (shared by AI Stylist and Chat)
+async function logOutfitWorn(itemIds) {
+  const nowIso = new Date().toISOString();
+  const allItems = await getAllItems();
+  const map = new Map(allItems.map((it) => [String(it.id), it]));
+  let hadIdleItem = false;
+  let logged = 0;
+  for (const id of itemIds) {
+    const it = map.get(String(id));
+    if (it) {
+      if (!it.lastWorn || (Date.now() - new Date(it.lastWorn).getTime() > THIRTY_DAYS_MS)) {
+        hadIdleItem = true;
+      }
+      it.wearCount = (it.wearCount || 0) + 1;
+      it.lastWorn = nowIso;
+      await saveItem(it);
+      logged++;
+    }
+  }
+  toast(`Logged wear for all ${logged} pieces ✨`);
+  updateKarmaStreak();
+  recordPurchaseAvoided(1);
+  awardKarma(KARMA_CONFIG.POINTS.REWEAR_OUTFIT, "Re-wore outfit (+10)");
+  unlockBadge("rewear_rookie");
+  if (hadIdleItem) {
+    awardKarma(KARMA_CONFIG.POINTS.WEAR_IDLE_ITEM, "Rescued idle piece (+25)");
+    unlockBadge("never_worn_rescuer");
+  }
+}
+
 let currentSuggestedOutfit = [];
 let priorityStyleItemId = null;
 
@@ -2088,12 +2390,13 @@ async function showSuggestion(forcedItemId = null) {
 
   try {
     const items = await getAllItems();
-    const result = await suggestOutfit(items, styleOccasion, lastOutfitIds, priorityStyleItemId);
+    const result = await getOutfitSuggestion(items);
 
     if (result.missing) {
       box.innerHTML = `
         <div class="notice">
           <div class="notice-icon">🧺</div>
+          ${result.notice ? `<p class="stylist-notice">${escapeHtml(result.notice)}</p>` : ""}
           <p>${escapeHtml(result.missing)}</p>
           <button class="btn-secondary" data-go="add">Add item</button>
         </div>`;
@@ -2107,6 +2410,8 @@ async function showSuggestion(forcedItemId = null) {
         <h3 class="outfit-title" style="margin:0;">Your ${styleOccasion} look</h3>
         <button id="btn-fav-suggested-header" type="button" class="fav-heart-btn" title="Favorite this look">♥</button>
       </div>
+      ${result.notice ? `<p class="stylist-notice">${escapeHtml(result.notice)}</p>` : ""}
+      <div class="style-source">${STYLE_SOURCE_LABELS[result.source] || STYLE_SOURCE_LABELS.rules}</div>
       <div class="grid outfit-grid">
         ${result.outfit
           .map(
@@ -2130,12 +2435,18 @@ async function showSuggestion(forcedItemId = null) {
           ? `<div class="outfit-explanation"><p>${escapeHtml(result.explanation)}</p></div>`
           : ""
       }
+      <div class="field-group stylist-label-group">
+        <span class="field-label">Label <span class="hint">(optional)</span></span>
+        <div class="label-chip-row" id="stylist-label-chips"></div>
+      </div>
       <button id="wore-outfit" class="btn-primary btn-block" style="margin-bottom: 8px;">✓ I wore this outfit</button>
       <div style="display:flex; gap:8px; margin-bottom:8px;">
         <button id="btn-fav-suggested" type="button" class="btn-secondary" style="flex:1;">♥ Favorite look</button>
         <button id="btn-save-suggested" type="button" class="btn-secondary" style="flex:1;">💾 Save look</button>
       </div>
       <button id="try-another" class="btn-secondary btn-block">↻ Try another</button>`;
+    stylistLabel = "";
+    renderStylistLabelChips();
     box.classList.remove("fade-in");
     void box.offsetWidth; // restart the fade animation
     box.classList.add("fade-in");
@@ -2174,6 +2485,18 @@ $("#style-result").addEventListener("click", async (e) => {
     return;
   }
 
+  if (e.target.closest("#stylist-label-chips [data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
+  const labelChip = e.target.closest("[data-stylist-label]");
+  if (labelChip) {
+    const value = labelChip.dataset.stylistLabel;
+    stylistLabel = stylistLabel.toLowerCase() === value.toLowerCase() ? "" : value;
+    renderStylistLabelChips();
+    return;
+  }
+
   const favBtn = e.target.closest("#btn-fav-suggested") || e.target.closest("#btn-fav-suggested-header");
   if (favBtn && currentSuggestedOutfit && currentSuggestedOutfit.length) {
     const outfit = {
@@ -2182,6 +2505,7 @@ $("#style-result").addEventListener("click", async (e) => {
       occasion: styleOccasion || "casual",
       createdAt: Date.now(),
       items: currentSuggestedOutfit.map((p) => p.item),
+      label: stylistLabel,
     };
     promptFavoriteOutfit(outfit);
     return;
@@ -2195,6 +2519,7 @@ $("#style-result").addEventListener("click", async (e) => {
       occasion: styleOccasion || "casual",
       createdAt: Date.now(),
       items: currentSuggestedOutfit.map((p) => p.item),
+      label: stylistLabel,
     };
     const list = getSavedOutfits();
     list.unshift(outfit);
@@ -2210,31 +2535,599 @@ $("#style-result").addEventListener("click", async (e) => {
   if (woreBtn && currentSuggestedOutfit && currentSuggestedOutfit.length) {
     woreBtn.disabled = true;
     woreBtn.textContent = "✓ Outfit logged!";
-    const nowIso = new Date().toISOString();
-    const allItems = await getAllItems();
-    const map = new Map(allItems.map((it) => [it.id, it]));
-    let hadIdleItem = false;
-    for (const piece of currentSuggestedOutfit) {
-      const it = map.get(piece.item.id);
-      if (it) {
-        if (!it.lastWorn || (Date.now() - new Date(it.lastWorn).getTime() > THIRTY_DAYS_MS)) {
-          hadIdleItem = true;
-        }
-        it.wearCount = (it.wearCount || 0) + 1;
-        it.lastWorn = nowIso;
-        await saveItem(it);
+    await logOutfitWorn(currentSuggestedOutfit.map((p) => p.item.id));
+  }
+});
+
+// =====================================================
+// Style me — Chat with the stylist (talks to POST /api/chat)
+// =====================================================
+const CHAT_BREAK_MSG = "The stylist needs a short break, please try again soon.";
+const CHAT_CHIP_TEXT = {
+  vibe: "What’s the vibe today?",
+  screenshot: "Style me from this screenshot",
+  buy: "Should I buy this?",
+};
+const chatMessages = []; // { role: "user" | "stylist", text, image?, result?, error? } — kept in memory only
+let chatPendingImage = null; // 512px photo waiting to be sent
+let chatChipAwaitingPhoto = null; // chip text to send once a photo is picked
+let chatBusy = false;
+let chatItemsById = new Map(); // wardrobe lookup for outfit cards in replies
+
+// Wardrobe as compact text for the chat: "id | category | color | occasions | wears | days since worn"
+function wardrobeAsChatText(items) {
+  const now = Date.now();
+  return items
+    .map((it) => {
+      const days = it.lastWorn ? Math.max(0, Math.floor((now - new Date(it.lastWorn).getTime()) / 86400000)) : "-";
+      return [it.id, it.category, it.color, (it.occasions || []).join(", "), it.wearCount || 0, Number.isFinite(days) ? days : "-"]
+        .map(plainText)
+        .join(" | ");
+    })
+    .join("\n");
+}
+
+function chatBubbleHtml(msg, index) {
+  if (msg.role === "user") {
+    return `
+      <div class="chat-row user">
+        <div class="chat-bubble user">
+          ${msg.image ? `<img class="chat-bubble-img" src="${msg.image}" alt="Attached photo" />` : ""}
+          ${msg.text ? `<p>${escapeHtml(msg.text)}</p>` : ""}
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="chat-row stylist">
+      <div class="chat-avatar">✨</div>
+      <div class="chat-bubble stylist ${msg.error ? "error" : ""}">
+        <p>${escapeHtml(msg.text)}</p>
+        ${msg.result ? chatResultHtml(msg, index) : ""}
+      </div>
+    </div>`;
+}
+
+// Extra content under a stylist reply (outfit cards, swap offer, verdict) — filled in by renderChatResult
+function chatResultHtml(msg, index) {
+  return typeof renderChatResult === "function" ? renderChatResult(msg, index) : "";
+}
+
+async function renderChat() {
+  const log = $("#chat-log");
+  if (!log) return;
+  if (!chatMessages.length) {
+    log.innerHTML = `
+      <div class="chat-row stylist">
+        <div class="chat-avatar">✨</div>
+        <div class="chat-bubble stylist">
+          <p>Hi! I’m your Weari stylist. Ask me what to wear, send a screenshot of a look you love, or check something before you buy it.</p>
+        </div>
+      </div>`;
+  } else {
+    chatItemsById = new Map((await getAllItems()).map((it) => [String(it.id), it]));
+    log.innerHTML = chatMessages.map(chatBubbleHtml).join("");
+    log.lastElementChild?.classList.add("is-new"); // only the newest bubble animates in
+  }
+  if (chatBusy) {
+    log.insertAdjacentHTML(
+      "beforeend",
+      `<div class="chat-row stylist"><div class="chat-avatar">✨</div><div class="chat-bubble stylist typing"><span></span><span></span><span></span></div></div>`
+    );
+  }
+  const last = log.lastElementChild;
+  if (last && currentStyleMode === "chat") last.scrollIntoView({ block: "nearest" });
+}
+
+function setChatAttachment(dataUrl) {
+  chatPendingImage = dataUrl;
+  $("#chat-attachment").hidden = !dataUrl;
+  $("#chat-attachment-img").src = dataUrl || "";
+}
+
+async function sendChat(text) {
+  text = String(text || "").trim();
+  if (chatBusy || (!text && !chatPendingImage)) return;
+
+  const history = chatMessages.slice(-4).map((m) => ({ role: m.role, text: m.text }));
+  const image = chatPendingImage;
+  chatMessages.push({ role: "user", text, image });
+  setChatAttachment(null);
+  $("#chat-input").value = "";
+  chatBusy = true;
+  $("#chat-send").disabled = true;
+  renderChat();
+
+  try {
+    const items = await getAllItems();
+    const res = await callApi(
+      "/api/chat",
+      {
+        message: text,
+        history,
+        image: image || undefined,
+        wardrobe: wardrobeAsChatText(items),
+        // getOnboardingPreferences() returns only goal, styles and occasions — never age, budget or other answers
+        preferences: getOnboardingPreferences() || {},
+      },
+      { timeoutMs: 30000 }
+    );
+    chatMessages.push({ role: "stylist", text: res.reply, result: res });
+  } catch (err) {
+    console.warn("Chat stylist unavailable:", err.message);
+    chatMessages.push({ role: "stylist", text: CHAT_BREAK_MSG, error: true });
+  } finally {
+    chatBusy = false;
+    $("#chat-send").disabled = false;
+    renderChat();
+  }
+}
+
+$("#chat-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  chatChipAwaitingPhoto = null;
+  sendChat($("#chat-input").value);
+});
+
+// Attach: camera or upload (photos are shrunk to 512px before sending)
+function toggleChatAttachMenu(open) {
+  const menu = $("#chat-attach-menu");
+  menu.hidden = open === undefined ? !menu.hidden : !open;
+  $("#chat-attach-btn").setAttribute("aria-expanded", String(!menu.hidden));
+}
+$("#chat-attach-btn")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleChatAttachMenu();
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".chat-attach-wrap")) $("#chat-attach-menu") && toggleChatAttachMenu(false);
+});
+$("#chat-attach-menu")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-chat-attach]");
+  if (!btn) return;
+  toggleChatAttachMenu(false);
+  $(btn.dataset.chatAttach === "camera" ? "#chat-file-camera" : "#chat-file-upload").click();
+});
+["#chat-file-camera", "#chat-file-upload"].forEach((sel) => {
+  $(sel)?.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      setChatAttachment(await resizeImage(file, 512, 0.7));
+      if (chatChipAwaitingPhoto) {
+        const text = $("#chat-input").value || chatChipAwaitingPhoto;
+        chatChipAwaitingPhoto = null;
+        sendChat(text);
       }
+    } catch {
+      toast("Couldn't read that photo");
     }
-    toast(`Logged wear for all ${currentSuggestedOutfit.length} pieces ✨`);
-    updateKarmaStreak();
-    recordPurchaseAvoided(1);
-    awardKarma(KARMA_CONFIG.POINTS.REWEAR_OUTFIT, "Re-wore outfit (+10)");
-    unlockBadge("rewear_rookie");
-    if (hadIdleItem) {
-      awardKarma(KARMA_CONFIG.POINTS.WEAR_IDLE_ITEM, "Rescued idle piece (+25)");
-      unlockBadge("never_worn_rescuer");
+  });
+});
+$("#chat-attachment-remove")?.addEventListener("click", () => setChatAttachment(null));
+
+// Chips: the vibe question sends right away; the other two ask for a photo first
+$("#chat-chips")?.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-chat-chip]");
+  if (!chip) return;
+  const text = CHAT_CHIP_TEXT[chip.dataset.chatChip];
+  if (chip.dataset.chatChip === "vibe" || chatPendingImage) {
+    sendChat(text);
+    return;
+  }
+  // Ask for a photo; if they cancel, the text stays in the box so they can describe it instead
+  chatChipAwaitingPhoto = text;
+  $("#chat-input").value = text;
+  $("#chat-file-upload").click();
+});
+
+// "I'll skip it" after a purchase check (Chat and Buying Brain): karma + a purchase avoided
+function skipPurchase() {
+  recordPurchaseAvoided(1);
+  awardKarma(KARMA_CONFIG.POINTS.SKIP_PURCHASE, `Skipped a purchase (+${KARMA_CONFIG.POINTS.SKIP_PURCHASE})`);
+  toast("Nice! That's one purchase avoided 🌱");
+}
+
+// ---------- What appears under a stylist reply ----------
+const VERDICT_LABELS = {
+  skip: { icon: "🙅", text: "Skip it — you already have this covered" },
+  swap_first: { icon: "🔁", text: "Swap first — try the Swap feed before buying" },
+  buy: { icon: "🛍️", text: "Worth buying — it fills a real gap" },
+};
+
+function renderChatResult(msg, index) {
+  const r = msg.result;
+  const pieces = (r.outfit_item_ids || []).map((id) => chatItemsById.get(String(id))).filter(Boolean);
+  const isOutfit = (r.kind === "outfit" || r.kind === "reference_match") && pieces.length;
+  let html = "";
+
+  if (pieces.length) {
+    html += `<div class="chat-cards">${pieces
+      .map(
+        (it) => `
+        <div class="chat-card">
+          <img src="${it.photo}" alt="${escapeHtml(describe(it))}" />
+          <span>${escapeHtml(it.name || describe(it))}</span>
+        </div>`
+      )
+      .join("")}</div>`;
+  }
+
+  if (isOutfit) {
+    html += `<div class="chat-actions">
+      <button type="button" class="chat-action" data-chat-fav="${index}">♥ Favorite</button>
+      <button type="button" class="chat-action" data-chat-wore="${index}" ${msg.wore ? "disabled" : ""}>${msg.wore ? "✓ Logged" : "✓ I wore this"}</button>
+    </div>`;
+  }
+
+  if (r.kind === "purchase_check" && VERDICT_LABELS[r.verdict]) {
+    const v = VERDICT_LABELS[r.verdict];
+    html += `<div class="chat-verdict ${r.verdict}"><span>${v.icon}</span><strong>${v.text}</strong></div>`;
+    if (r.verdict === "skip") {
+      html += `<div class="chat-actions">
+        <button type="button" class="chat-action primary" data-chat-skip="${index}" ${msg.skipped ? "disabled" : ""}>
+          ${msg.skipped ? `✓ Skipped (+${KARMA_CONFIG.POINTS.SKIP_PURCHASE} karma)` : "I’ll skip it"}
+        </button>
+      </div>`;
     }
   }
+
+  const offerSwap = (r.missing_pieces || []).length || (r.kind === "purchase_check" && r.verdict === "swap_first");
+  if ((r.missing_pieces || []).length) {
+    html += `<div class="chat-missing"><span>Missing:</span>${r.missing_pieces
+      .map((m) => `<span class="tag">${escapeHtml(m)}</span>`)
+      .join("")}</div>`;
+  }
+  if (offerSwap) {
+    html += `<div class="chat-actions"><button type="button" class="chat-action" data-go="swap">🔁 Find it on the Swap feed</button></div>`;
+  }
+  return html ? `<div class="chat-result">${html}</div>` : "";
+}
+
+$("#chat-log")?.addEventListener("click", async (e) => {
+  const fav = e.target.closest("[data-chat-fav]");
+  const wore = e.target.closest("[data-chat-wore]");
+  const skip = e.target.closest("[data-chat-skip]");
+  const btn = fav || wore || skip;
+  if (!btn) return;
+  const msg = chatMessages[Number(btn.dataset.chatFav ?? btn.dataset.chatWore ?? btn.dataset.chatSkip)];
+  if (!msg || !msg.result) return;
+  const ids = (msg.result.outfit_item_ids || []).filter((id) => chatItemsById.has(String(id)));
+
+  if (fav) {
+    const occasion = OCCASIONS.find((o) => (chatMessages[chatMessages.indexOf(msg) - 1]?.text || "").toLowerCase().includes(o)) || "casual";
+    promptFavoriteOutfit({
+      id: "outfit_chat_" + Date.now(),
+      name: "Chat look",
+      occasion,
+      createdAt: Date.now(),
+      items: ids.map((id) => chatItemsById.get(String(id))),
+    });
+  }
+
+  if (wore && !msg.wore) {
+    msg.wore = true;
+    await logOutfitWorn(ids);
+    renderChat();
+  }
+
+  if (skip && !msg.skipped) {
+    msg.skipped = true;
+    skipPurchase();
+    renderChat();
+  }
+});
+
+// =====================================================
+// Buying Brain — shop scan (talks to POST /api/buycheck)
+// =====================================================
+const SAVED_FOR_LATER_KEY = "weari_saved_for_later";
+const CONSIDERED_NOT_BOUGHT_KEY = "weari_considered_not_bought";
+const BUYCHECK_BREAK_MSG = "The stylist needs a short break, please try again soon.";
+const BUYCHECK_VERDICTS = {
+  skip: { icon: "🙅", label: "Skip it", css: "skip" },
+  "real gap": { icon: "🛍️", label: "Real gap", css: "buy" },
+  "try rewear first": { icon: "🔁", label: "Try rewear first", css: "swap_first" },
+};
+let currentBuyCheck = null; // { photo, price, result, skipped, saved, counted }
+
+function getSavedForLater() {
+  try {
+    const list = JSON.parse(localStorage.getItem(SAVED_FOR_LATER_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+function saveSavedForLater(list) {
+  try {
+    localStorage.setItem(SAVED_FOR_LATER_KEY, JSON.stringify(list.slice(0, 20)));
+    return true;
+  } catch {
+    toast("Couldn't save — browser storage is full");
+    return false;
+  }
+}
+function getConsideredNotBoughtCount() {
+  try {
+    return Number(localStorage.getItem(CONSIDERED_NOT_BOUGHT_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+// Counted once per scan, when it ends in "I'll skip it" or "Save for later"
+function recordConsideredNotBought() {
+  if (!currentBuyCheck || currentBuyCheck.counted) return;
+  currentBuyCheck.counted = true;
+  try {
+    localStorage.setItem(CONSIDERED_NOT_BOUGHT_KEY, String(getConsideredNotBoughtCount() + 1));
+  } catch {}
+}
+
+// Wardrobe as compact text for the shop scan: "id | name | category | color | occasions | wears"
+function wardrobeAsBuycheckText(items) {
+  return items
+    .map((it) =>
+      [it.id, plainText(it.name || describe(it)).slice(0, 40), it.category, it.color, (it.occasions || []).join(", "), it.wearCount || 0]
+        .map(plainText)
+        .join(" | ")
+    )
+    .join("\n");
+}
+
+const formatMoney = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function openBuyCheckView(html) {
+  $("#buycheck-content").innerHTML = html;
+  $("#buycheck-view").hidden = false;
+  $("#buycheck-view").scrollTop = 0;
+  document.body.classList.add("no-scroll");
+}
+function closeBuyCheckView() {
+  $("#buycheck-view").hidden = true;
+  document.body.classList.remove("no-scroll");
+}
+$("#buycheck-close")?.addEventListener("click", closeBuyCheckView);
+
+async function runBuyCheck(photo, price) {
+  photo = await resizeDataUrl(photo, 512, 0.82); // always send at most 512px
+  const priceNum = Number(price);
+  currentBuyCheck = { photo, price: Number.isFinite(priceNum) && priceNum > 0 ? priceNum : null, result: null };
+  openBuyCheckView(`
+    <img class="buycheck-photo" src="${photo}" alt="Item you're thinking of buying" />
+    <div class="buycheck-thinking"><span class="sparkle-icon">✨</span> Buying Brain is checking your wardrobe…</div>`);
+  try {
+    const items = await getAllItems();
+    const res = await callApi(
+      "/api/buycheck",
+      { image: photo, price: currentBuyCheck.price || undefined, wardrobe: wardrobeAsBuycheckText(items) },
+      { timeoutMs: 30000 }
+    );
+    currentBuyCheck.result = res;
+    chatItemsById = new Map(items.map((it) => [String(it.id), it]));
+    renderBuyCheckResult();
+  } catch (err) {
+    console.warn("Buying Brain unavailable:", err.message);
+    openBuyCheckView(`
+      <img class="buycheck-photo" src="${photo}" alt="Item you're thinking of buying" />
+      <div class="notice"><div class="notice-icon">☕</div><p>${BUYCHECK_BREAK_MSG}</p>
+        <button type="button" class="btn-secondary" data-buycheck="retry">Try again</button></div>`);
+  }
+}
+
+function buyCheckRow(title, ids) {
+  const pieces = ids.map((id) => chatItemsById.get(String(id))).filter(Boolean);
+  if (!pieces.length) return "";
+  return `
+    <h3 class="buycheck-row-title">${title}</h3>
+    <div class="buycheck-row">${pieces
+      .map(
+        (it) => `
+        <div class="chat-card">
+          <img src="${it.photo}" alt="${escapeHtml(describe(it))}" />
+          <span>${escapeHtml(it.name || describe(it))}</span>
+          <small>Worn ${it.wearCount || 0}×</small>
+        </div>`
+      )
+      .join("")}</div>`;
+}
+
+const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+
+// "Top · ● White · Edit" under the item name
+function buyCheckDetectedLine(r) {
+  return `
+    <div class="buycheck-detected">
+      <span>${escapeHtml(capitalize(r.category))}</span>
+      <span class="buycheck-sep">·</span>
+      <span class="dot" style="background:${colorHex(r.color)}"></span>
+      <span>${escapeHtml(capitalize(r.color))}</span>
+      <button type="button" class="link-btn buycheck-edit-link" data-buycheck="edit">Edit</button>
+    </div>`;
+}
+
+function buyCheckEditForm(r) {
+  const options = (list, current) =>
+    list.map((v) => `<option value="${v}" ${v === current ? "selected" : ""}>${capitalize(v)}</option>`).join("");
+  return `
+    <form class="buycheck-edit" id="buycheck-edit-form">
+      <label>Name<input name="name" maxlength="40" value="${escapeHtml(r.item_name || "")}" /></label>
+      <div class="buycheck-edit-row">
+        <label>Category<select name="category">${options(CATEGORIES, r.category)}</select></label>
+        <label>Color<select name="color">${options(COLORS.map((c) => c.name), r.color)}</select></label>
+      </div>
+      <div class="buycheck-edit-actions">
+        <button type="submit" class="btn-primary">Update verdict</button>
+        <button type="button" class="btn-secondary" data-buycheck="cancel-edit">Cancel</button>
+      </div>
+    </form>`;
+}
+
+// Re-run the verdict on this device with buying-brain.js (the same rules the server uses) — no AI call
+async function recheckBuyCheckLocally({ name, category, color }) {
+  if (!window.BuyingBrain) throw new Error("Buying Brain rules not loaded");
+  const items = await getAllItems();
+  chatItemsById = new Map(items.map((it) => [String(it.id), it]));
+  const wardrobe = items.map((it) => ({
+    id: String(it.id),
+    name: it.name || describe(it),
+    category: it.category,
+    color: it.color,
+    occasions: it.occasions || [],
+    wears: it.wearCount || 0,
+  }));
+  const r = currentBuyCheck.result;
+  const local = window.BuyingBrain.shopCheck({ category, color, occasions: r.occasions || [] }, wardrobe);
+  currentBuyCheck.result = { ...r, item_name: name || `${capitalize(color)} ${category}`, category, color, confidence: "high", ...local, edited: true };
+}
+
+$("#buycheck-view")?.addEventListener("submit", async (e) => {
+  if (e.target.id !== "buycheck-edit-form") return;
+  e.preventDefault();
+  const data = new FormData(e.target);
+  try {
+    await recheckBuyCheckLocally({
+      name: String(data.get("name") || "").trim().slice(0, 40),
+      category: String(data.get("category")),
+      color: String(data.get("color")),
+    });
+    currentBuyCheck.editing = false;
+    renderBuyCheckResult();
+    toast("Verdict updated ✨");
+  } catch (err) {
+    console.warn("Local re-check failed:", err.message);
+    toast("Couldn't update the verdict, please try again");
+  }
+});
+
+const BUYCHECK_UNSURE_MSG = "I can’t tell what this is. Try again with just the item, filling the frame, on a plain background.";
+
+function renderBuyCheckResult() {
+  const { photo, price, result: r, skipped, saved } = currentBuyCheck;
+  // Not sure what the item is: no verdict, ask for a better photo
+  if (r.category === "unknown" || r.confidence === "low" || !r.verdict) {
+    openBuyCheckView(`
+      <img class="buycheck-photo" src="${photo}" alt="Photo the Buying Brain couldn't read" />
+      <div class="notice buycheck-unsure">
+        <div class="notice-icon">🔍</div>
+        <p>${BUYCHECK_UNSURE_MSG}</p>
+        <button type="button" class="btn-primary btn-block" data-buycheck="rescan">📷 Try again</button>
+        ${r.source === "mock" ? `<span class="buycheck-test">Test mode, not real Gemini</span>` : ""}
+      </div>`);
+    return;
+  }
+  const v = BUYCHECK_VERDICTS[r.verdict] || BUYCHECK_VERDICTS["try rewear first"];
+  openBuyCheckView(`
+    <img class="buycheck-photo" src="${photo}" alt="${escapeHtml(r.item_name || "Item you're thinking of buying")}" />
+    <div class="buycheck-head">
+      <span class="buycheck-badge ${v.css}">${v.icon} ${v.label}</span>
+      ${r.source === "mock" ? `<span class="buycheck-test">Test mode, not real Gemini</span>` : ""}
+    </div>
+    ${r.item_name ? `<h2 class="buycheck-item-name">${escapeHtml(r.item_name)}</h2>` : ""}
+    ${currentBuyCheck.editing ? buyCheckEditForm(r) : buyCheckDetectedLine(r)}
+    ${r.edited ? `<p class="buycheck-edited">Updated with your edits, using the same Buying Brain rules (no new AI call).</p>` : ""}
+    <p class="buycheck-reason">${escapeHtml(r.reason)}</p>
+    ${
+      price
+        ? `<div class="buycheck-cpw"><strong>${formatMoney(price / 10)}</strong> per wear if worn 10 times <span>(price ${formatMoney(price)})</span></div>`
+        : ""
+    }
+    ${buyCheckRow("You already own", r.similar_item_ids || [])}
+    ${buyCheckRow("Would pair with", r.pairs_with_ids || [])}
+    <div class="buycheck-actions">
+      <button type="button" class="btn-primary btn-block buycheck-skip" data-buycheck="skip" ${skipped ? "disabled" : ""}>
+        ${skipped ? `✓ Skipped (+${KARMA_CONFIG.POINTS.SKIP_PURCHASE} karma)` : "I’ll skip it"}
+      </button>
+      <button type="button" class="btn-secondary btn-block" data-buycheck="save" ${saved ? "disabled" : ""}>
+        ${saved ? "✓ Saved for later" : "🔖 Save for later"}
+      </button>
+      ${r.verdict === "try rewear first" ? `<button type="button" class="btn-secondary btn-block" data-buycheck="swap">🔁 See Swap feed</button>` : ""}
+    </div>`);
+}
+
+$("#buycheck-view")?.addEventListener("click", (e) => {
+  const action = e.target.closest("[data-buycheck]")?.dataset.buycheck;
+  if (!action || !currentBuyCheck) return;
+
+  if (action === "retry") runBuyCheck(currentBuyCheck.photo, currentBuyCheck.price);
+
+  if (action === "rescan") {
+    closeBuyCheckView();
+    startCameraScan("buycheck");
+  }
+
+  if (action === "edit" || action === "cancel-edit") {
+    currentBuyCheck.editing = action === "edit";
+    renderBuyCheckResult();
+  }
+
+  if (action === "skip" && !currentBuyCheck.skipped) {
+    currentBuyCheck.skipped = true;
+    recordConsideredNotBought();
+    skipPurchase();
+    renderBuyCheckResult();
+  }
+
+  if (action === "save" && !currentBuyCheck.saved) {
+    const { photo, price, result: r } = currentBuyCheck;
+    const ok = saveSavedForLater([
+      {
+        id: "later_" + Date.now(),
+        photo,
+        price,
+        verdict: r.verdict,
+        reason: r.reason,
+        item: { name: r.item_name, category: r.category, color: r.color },
+        createdAt: Date.now(),
+      },
+      ...getSavedForLater(),
+    ]);
+    if (ok) {
+      currentBuyCheck.saved = true;
+      recordConsideredNotBought();
+      toast("Saved for later 🔖");
+      renderBuyCheckResult();
+      if (typeof renderSavedForLater === "function") renderSavedForLater();
+    }
+  }
+
+  if (action === "swap") {
+    closeBuyCheckView();
+    showScreen("swap");
+  }
+});
+
+$("#btn-buying-brain")?.addEventListener("click", () => startCameraScan("buycheck"));
+
+function renderSavedForLater() {
+  const box = $("#saved-for-later");
+  if (!box) return;
+  const list = getSavedForLater();
+  box.hidden = !list.length;
+  if (!list.length) return;
+  box.innerHTML = `
+    <div class="saved-later-head"><h3>Saved for later</h3><span>${list.length}</span></div>
+    <div class="saved-later-row">${list
+      .map((x) => {
+        const v = BUYCHECK_VERDICTS[x.verdict] || BUYCHECK_VERDICTS["try rewear first"];
+        return `
+        <div class="saved-later-card">
+          <button type="button" class="saved-later-remove" data-later-remove="${x.id}" aria-label="Remove">×</button>
+          <img src="${x.photo}" alt="${escapeHtml(x.item?.name || "Saved item")}" />
+          <div class="saved-later-body">
+            <span class="saved-later-name">${escapeHtml(x.item?.name || "Saved item")}</span>
+            <span class="saved-later-meta"><span class="buycheck-badge ${v.css} mini">${v.icon} ${v.label}</span>${x.price ? ` · ${formatMoney(x.price)}` : ""}</span>
+          </div>
+        </div>`;
+      })
+      .join("")}</div>`;
+}
+
+$("#saved-for-later")?.addEventListener("click", (e) => {
+  const id = e.target.closest("[data-later-remove]")?.dataset.laterRemove;
+  if (!id) return;
+  saveSavedForLater(getSavedForLater().filter((x) => x.id !== id));
+  renderSavedForLater();
 });
 
 // =====================================================
@@ -2243,6 +3136,9 @@ $("#style-result").addEventListener("click", async (e) => {
 // =====================================================
 const REQUESTS_KEY = "weari-swap-requests";
 let swapTab = "feed";
+// Swipe deck: listings skipped this visit (kept in memory only, no storage key)
+const swapSkipped = new Set();
+const SWAP_DEMO_ACCEPT_MS = 2000;
 
 // Swap requests are small, so they're kept in localStorage
 function getRequests() {
@@ -2294,6 +3190,7 @@ document.querySelector("#swap-tabs").addEventListener("click", (e) => {
 
 async function renderSwap() {
   const [listings, items] = await Promise.all([getSwapListings(), getAllItems()]);
+  acceptDueDemoRequests();
   const requests = getRequests();
   const mine = items.filter((it) => it.swappable);
 
@@ -2309,30 +3206,42 @@ async function renderSwap() {
   $("#swap-listings").hidden = swapTab !== "listings";
   $("#swap-requests").hidden = swapTab !== "requests";
 
-  // --- Feed ---
+  // --- Feed: one big card at a time ---
   const requested = new Set(requests.map((r) => r.listingId));
-  $("#swap-feed").innerHTML = listings
-    .map(
-      (l) => `
-      <article class="card">
-        <img src="${l.photo}" alt="${l.title}" loading="lazy" />
-        <span class="member-badge"><span class="avatar">${l.member[0]}</span>${l.member}</span>
-        <div class="card-body">
-          <div class="listing-title">${l.title}</div>
-          <div class="card-top">
-            <span class="dot" style="background:${colorHex(l.color)}"></span>
-            <span class="card-meta">${describe(l)}</span>
+  const deck = listings.filter((l) => !requested.has(l.id) && !swapSkipped.has(l.id));
+  const top = deck[0];
+  $("#swap-feed").innerHTML = top
+    ? `
+      <p class="swap-demo-note">Demo: sample community pieces. Requests and replies are simulated.</p>
+      <div class="swap-deck collage-${COLLAGE_COLORS[(listings.length - deck.length) % COLLAGE_COLORS.length]}">
+        <article class="swap-card" id="swap-card" data-swap-card="${top.id}">
+          <div class="swap-card-media">
+            <img src="${top.photo}" alt="${escapeHtml(top.title)}" draggable="false" />
+            <span class="member-badge"><span class="avatar">${top.member[0]}</span>${top.member}</span>
+            <span class="swap-stamp swap-stamp-like">LIKE</span>
+            <span class="swap-stamp swap-stamp-skip">SKIP</span>
           </div>
-          ${tagsHtml(l.occasions)}
-          ${
-            requested.has(l.id)
-              ? `<button class="btn-small done" disabled>✓ Requested</button>`
-              : `<button class="btn-small" data-interested="${l.id}">I’m interested</button>`
-          }
-        </div>
-      </article>`
-    )
-    .join("");
+          <div class="card-body">
+            <div class="listing-title">${escapeHtml(top.title)}</div>
+            <div class="card-top">
+              <span class="dot" style="background:${colorHex(top.color)}"></span>
+              <span class="card-meta">${describe(top)}</span>
+            </div>
+            ${tagsHtml(top.occasions)}
+          </div>
+        </article>
+      </div>
+      <div class="swap-deck-actions">
+        <button type="button" class="swap-deck-btn skip" data-swap-skip="${top.id}" aria-label="Skip">✕ <span>Skip</span></button>
+        <span class="swap-deck-count">${listings.length - deck.length + 1} of ${listings.length}</span>
+        <button type="button" class="swap-deck-btn like" data-swap-like="${top.id}" aria-label="Like and request a swap">♥ <span>Like</span></button>
+      </div>`
+    : `<div class="notice">
+        <div class="notice-icon">✨</div>
+        <p>You’ve seen every piece for now.</p>
+        ${swapSkipped.size ? `<button class="btn-secondary" data-swap-reset>See skipped pieces again</button>` : `<button class="btn-secondary" data-swap-goto="requests">View my requests</button>`}
+      </div>`;
+  bindSwapCardDrag();
 
   // --- My listings ---
   $("#swap-listings").innerHTML = mine.length
@@ -2369,8 +3278,9 @@ async function renderSwap() {
               <div class="request-text">Your <strong>${offered ? describe(offered) : "removed item"}</strong>
                 for ${(theirs.member || "member")}’s <strong>${(theirs.title || "item")}</strong></div>
               <div class="request-meta">
-                <span class="status ${r.status === 'completed' ? 'status-completed' : ''}">${r.status === 'completed' ? '✓ Completed' : 'Pending'}</span>
+                <span class="status ${r.status === 'completed' || r.status === 'accepted' ? 'status-completed' : ''}">${r.status === 'completed' ? '✓ Completed' : r.status === 'accepted' ? '✓ Accepted (demo)' : 'Pending'}</span>
                 <span>${new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                ${r.status === 'accepted' ? `<button class="link-btn" data-open-swap-chat="${r.id}">Open chat</button>` : ''}
                 ${r.status !== 'completed' ? `<button class="link-btn" data-complete-request="${r.id}">Mark completed</button>` : ''}
                 <button class="link-btn" data-cancel-request="${r.id}">Cancel</button>
               </div>
@@ -2393,6 +3303,18 @@ document.querySelector("#screen-swap").addEventListener("click", (e) => {
   }
   const interested = e.target.closest("[data-interested]");
   if (interested) openOfferSheet(interested.dataset.interested);
+
+  const like = e.target.closest("[data-swap-like]");
+  if (like) return swipeSwapCard("right");
+  const skip = e.target.closest("[data-swap-skip]");
+  if (skip) return swipeSwapCard("left");
+  if (e.target.closest("[data-swap-reset]")) {
+    swapSkipped.clear();
+    renderSwap();
+    return;
+  }
+  const chatBtn = e.target.closest("[data-open-swap-chat]");
+  if (chatBtn) return openSwapChat(chatBtn.dataset.openSwapChat);
 
   const complete = e.target.closest("[data-complete-request]");
   if (complete) {
@@ -2478,6 +3400,9 @@ async function openOfferSheet(listingId) {
 $("#sheet").addEventListener("click", async (e) => {
   if (e.target.closest("[data-close-sheet]")) return closeSheet();
 
+  const rewearBtn = e.target.closest("[data-rewear-action]");
+  if (rewearBtn) return openRewearFlow(rewearBtn.dataset.rewearAction, rewearBtn.dataset.rewearItem);
+
   const markWornBtn = e.target.closest("[data-sheet-mark-worn]");
   if (markWornBtn) {
     const id = markWornBtn.dataset.sheetMarkWorn;
@@ -2543,17 +3468,20 @@ $("#sheet").addEventListener("click", async (e) => {
 
   if (e.target.closest("#send-request") && offerChoice) {
     const { photo, ...listing } = offerFor || {};
+    const requestId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
     saveRequests([
       ...getRequests(),
       {
-        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        id: requestId,
         listingId: offerFor ? offerFor.id : "",
         listing,
         offeredItemId: offerChoice,
         status: "pending",
+        demo: true, // simulated: accepted automatically after 2 seconds
         createdAt: Date.now(),
       },
     ]);
+    setTimeout(() => acceptDemoRequest(requestId), SWAP_DEMO_ACCEPT_MS);
     awardKarma(KARMA_CONFIG.POINTS.SEND_SWAP_REQUEST, "Sent swap request");
     unlockBadge("first_swap_request");
     openSheet(`
@@ -2561,11 +3489,566 @@ $("#sheet").addEventListener("click", async (e) => {
         <div class="success-icon">🎉</div>
         <h3>Swap request sent!</h3>
         <p>Your offer for ${offerFor ? offerFor.member : "community member"}’s ${offerFor ? offerFor.title : "item"} is saved in <strong>My requests</strong>.</p>
+        <p class="swap-waiting" data-waiting-request="${requestId}">⏳ Waiting for a reply… <small>(demo)</small></p>
         <button class="btn-primary btn-block" data-close-sheet>Done</button>
       </div>`);
     renderSwap();
   }
 });
+
+// ---------- Swipe deck: drag right to like, left to skip ----------
+const SWIPE_THRESHOLD = 90;
+
+function bindSwapCardDrag() {
+  const card = $("#swap-card");
+  if (!card) return;
+  let startX = 0;
+  let dx = 0;
+  let dragging = false;
+
+  card.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    startX = e.clientX;
+    dx = 0;
+    card.setPointerCapture(e.pointerId);
+    card.classList.add("dragging");
+  });
+  card.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    dx = e.clientX - startX;
+    card.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
+    card.style.setProperty("--like", Math.max(0, Math.min(1, dx / SWIPE_THRESHOLD)));
+    card.style.setProperty("--skip", Math.max(0, Math.min(1, -dx / SWIPE_THRESHOLD)));
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    card.classList.remove("dragging");
+    if (dx > SWIPE_THRESHOLD) return swipeSwapCard("right");
+    if (dx < -SWIPE_THRESHOLD) return swipeSwapCard("left");
+    resetSwapCard(card);
+  };
+  card.addEventListener("pointerup", end);
+  card.addEventListener("pointercancel", end);
+}
+
+function resetSwapCard(card) {
+  card.style.transform = "";
+  card.style.setProperty("--like", 0);
+  card.style.setProperty("--skip", 0);
+}
+
+function swipeSwapCard(direction) {
+  const card = $("#swap-card");
+  if (!card || card.classList.contains("flying")) return;
+  const id = card.dataset.swapCard;
+  card.classList.add("flying");
+  card.style.setProperty(direction === "right" ? "--like" : "--skip", 1);
+  card.style.transform = `translateX(${direction === "right" ? 140 : -140}%) rotate(${direction === "right" ? 18 : -18}deg)`;
+  setTimeout(() => {
+    if (direction === "left") {
+      swapSkipped.add(id);
+      renderSwap();
+      return;
+    }
+    // Liked: the card comes back until a request is actually sent
+    card.classList.remove("flying");
+    resetSwapCard(card);
+    openOfferSheet(id);
+  }, 260);
+}
+
+// ---------- Simulated reply: accepted after 2 seconds, then a demo chat ----------
+function swapChatOpener(r) {
+  const offered = r.offeredName || "your piece";
+  const title = (r.listing && r.listing.title) || "my piece";
+  return `Hi! I’d love to swap my ${title} for ${offered}. Could we meet up this weekend? 😊`;
+}
+
+function markDemoAccepted(r, offeredName) {
+  r.status = "accepted";
+  r.acceptedAt = Date.now();
+  r.offeredName = r.offeredName || offeredName || "";
+  if (!Array.isArray(r.messages) || !r.messages.length) {
+    r.messages = [{ from: "them", text: swapChatOpener(r), at: Date.now() }];
+  }
+}
+
+async function acceptDemoRequest(requestId) {
+  const items = await getAllItems();
+  const list = getRequests();
+  const r = list.find((x) => x.id === requestId);
+  if (!r || !r.demo || r.status !== "pending") return;
+  const offered = items.find((it) => it.id === r.offeredItemId);
+  markDemoAccepted(r, offered ? `your ${describe(offered)}` : "");
+  saveRequests(list);
+
+  const member = (r.listing && r.listing.member) || "They";
+  const waiting = document.querySelector(`#sheet:not([hidden]) [data-waiting-request="${requestId}"]`);
+  if (waiting) openSwapChat(requestId);
+  else toast(`${member} accepted your swap (demo) 💬`);
+  if (!$("#screen-swap").hidden) renderSwap();
+}
+
+// Demo requests whose timer was lost (e.g. the page reloaded) are accepted on the next visit
+function acceptDueDemoRequests() {
+  const list = getRequests();
+  let changed = false;
+  for (const r of list) {
+    if (r.demo && r.status === "pending" && Date.now() - r.createdAt >= SWAP_DEMO_ACCEPT_MS) {
+      markDemoAccepted(r);
+      changed = true;
+    }
+  }
+  if (changed) saveRequests(list);
+}
+
+let swapChatId = null;
+
+async function openSwapChat(requestId) {
+  const r = getRequests().find((x) => x.id === requestId);
+  if (!r) return;
+  swapChatId = requestId;
+  const listings = await getSwapListings();
+  const theirs = listings.find((l) => l.id === r.listingId) || r.listing || {};
+  const member = theirs.member || "Community member";
+  const messages = Array.isArray(r.messages) ? r.messages : [];
+
+  openSheet(`
+    <div class="sheet-header">
+      ${theirs.photo ? `<img src="${theirs.photo}" alt="" />` : ""}
+      <div>
+        <h3>Chat with ${escapeHtml(member)}</h3>
+        <p>About the ${escapeHtml(theirs.title || "swap")}</p>
+      </div>
+    </div>
+    <p class="swap-demo-note">Demo chat: ${escapeHtml(member)} is a sample member and messages are not sent to anyone.</p>
+    <div class="swap-chat-log" id="swap-chat-log">
+      ${messages
+        .map((m) => `<div class="chat-row ${m.from === "me" ? "user" : "stylist"}"><div class="chat-bubble ${m.from === "me" ? "user" : "stylist"}">${escapeHtml(m.text)}</div></div>`)
+        .join("")}
+    </div>
+    <form class="swap-chat-form" id="swap-chat-form" autocomplete="off">
+      <input type="text" id="swap-chat-input" class="text-input" placeholder="Write a message" maxlength="300" />
+      <button type="submit" class="chat-send-btn" aria-label="Send">↑</button>
+    </form>
+    <button class="link-btn sheet-cancel" data-close-sheet>Close</button>`);
+  const log = $("#swap-chat-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+$("#sheet").addEventListener("submit", (e) => {
+  if (e.target.id !== "swap-chat-form") return;
+  e.preventDefault();
+  const input = $("#swap-chat-input");
+  const text = input.value.trim();
+  if (!text || !swapChatId) return;
+  const list = getRequests();
+  const r = list.find((x) => x.id === swapChatId);
+  if (!r) return;
+  r.messages = [...(Array.isArray(r.messages) ? r.messages : []), { from: "me", text, at: Date.now() }];
+  saveRequests(list);
+  openSwapChat(swapChatId).then(() => $("#swap-chat-input")?.focus());
+});
+
+// =====================================================
+// Rewear: Sell, Swap and Donate (demo — no payments, no pickup yet)
+//   weari_listings: [{ id, itemId, type: "sell" | "donate", status, title, description,
+//                      price, currency, center, itemName, category, color, createdAt, soldAt, donatedAt }]
+//   weari_earnings: { currency: "LKR", total, entries: [{ listingId, itemName, amount, soldAt }] }
+//   Swaps reuse the existing swap feed: an item marked swappable is "Listed", and a swap
+//   request offering it is "Pending" (or "Swapped" once completed).
+// =====================================================
+const LISTINGS_KEY = "weari_listings";
+const EARNINGS_KEY = "weari_earnings";
+const REWEAR_CURRENCY = "LKR";
+const REWEAR_STATUSES = ["Listed", "Pending", "Swapped", "Sold", "Donated"];
+const DONATION_CENTERS = [
+  { id: "example-1", name: "Example center 1", area: "Colombo 05" },
+  { id: "example-2", name: "Example center 2", area: "Kandy" },
+  { id: "example-3", name: "Example center 3", area: "Galle" },
+];
+
+let rewearItemId = null;
+let sellDraftToken = 0;
+let donateCenterId = null;
+
+function getListings() {
+  try {
+    const list = JSON.parse(localStorage.getItem(LISTINGS_KEY) || "[]");
+    if (Array.isArray(list)) return list.filter((l) => l && l.id && l.itemId);
+  } catch {}
+  return [];
+}
+
+function saveListings(list) {
+  try {
+    localStorage.setItem(LISTINGS_KEY, JSON.stringify(list));
+  } catch {
+    toast("Couldn't save — browser storage is full or blocked");
+  }
+}
+
+function getEarnings() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EARNINGS_KEY) || "null");
+    if (raw && typeof raw === "object") {
+      return {
+        currency: REWEAR_CURRENCY,
+        total: Number(raw.total) || 0,
+        entries: Array.isArray(raw.entries) ? raw.entries : [],
+      };
+    }
+  } catch {}
+  return { currency: REWEAR_CURRENCY, total: 0, entries: [] };
+}
+
+function saveEarnings(earnings) {
+  try {
+    localStorage.setItem(EARNINGS_KEY, JSON.stringify(earnings));
+  } catch {}
+}
+
+function formatLkr(amount) {
+  return `${REWEAR_CURRENCY} ${Math.round(Number(amount) || 0).toLocaleString("en-LK")}`;
+}
+
+// Where one item is in its Rewear journey, or null if it's just in the closet
+function getRewearStatus(item, listings = getListings(), requests = getRequests()) {
+  const own = listings.filter((l) => l.itemId === item.id);
+  const done = own.find((l) => l.status === "Sold" || l.status === "Donated");
+  if (done) return { type: done.type, status: done.status, listing: done };
+  const offers = requests.filter((r) => r.offeredItemId === item.id);
+  if (offers.some((r) => r.status === "completed")) return { type: "swap", status: "Swapped" };
+  const selling = own.find((l) => l.type === "sell" && l.status === "Listed");
+  if (selling) return { type: "sell", status: "Listed", listing: selling };
+  if (offers.length) return { type: "swap", status: "Pending" };
+  if (item.swappable) return { type: "swap", status: "Listed" };
+  return null;
+}
+
+function rewearStatusLabel(st) {
+  if (!st) return "";
+  if (st.type === "sell" && st.status === "Listed") return `Listed for sale · ${formatLkr(st.listing.price)}`;
+  if (st.type === "swap" && st.status === "Listed") return "Listed for swap";
+  if (st.status === "Pending") return "Swap pending";
+  if (st.status === "Donated" && st.listing?.center) return `Donated · ${st.listing.center}`;
+  return st.status;
+}
+
+// Rewear block inside the item detail sheet
+function rewearSheetSection(item) {
+  const st = getRewearStatus(item);
+  if (st) {
+    return `
+      <div class="item-detail-section rewear-sheet-section">
+        <label class="item-detail-label">Rewear</label>
+        <p class="rewear-sheet-status"><span class="rewear-pill rewear-pill-${st.status.toLowerCase()}">${st.status}</span> ${escapeHtml(rewearStatusLabel(st))}</p>
+        <button type="button" class="btn-outline-action" data-go="my-rewear">Open My Rewear</button>
+      </div>`;
+  }
+  return `
+    <div class="item-detail-section rewear-sheet-section">
+      <label class="item-detail-label">Rewear</label>
+      <div class="rewear-actions">
+        <button type="button" class="rewear-action" data-rewear-action="sell" data-rewear-item="${item.id}"><span>🏷️</span>Sell</button>
+        <button type="button" class="rewear-action" data-rewear-action="swap" data-rewear-item="${item.id}"><span>🔁</span>Swap</button>
+        <button type="button" class="rewear-action" data-rewear-action="donate" data-rewear-item="${item.id}"><span>💚</span>Donate</button>
+      </div>
+    </div>`;
+}
+
+function rewearItemHtml(item) {
+  return `
+    <img src="${item.photo}" alt="${escapeHtml(describe(item))}" />
+    <div>
+      <strong>${escapeHtml(describe(item))}</strong>
+      <small>${escapeHtml(item.category || "")}${item.color ? ` · ${escapeHtml(item.color)}` : ""}</small>
+    </div>`;
+}
+
+async function getRewearItem() {
+  if (!rewearItemId) return null;
+  return (await getAllItems()).find((x) => x.id === rewearItemId) || null;
+}
+
+function openRewearFlow(action, itemId) {
+  rewearItemId = itemId;
+  closeSheet();
+  showScreen(`rewear-${action}`);
+}
+
+// ---------- Sell ----------
+async function renderSellScreen() {
+  const item = await getRewearItem();
+  if (!item) return showScreen("wardrobe");
+  $("#sell-item").innerHTML = rewearItemHtml(item);
+  $("#sell-title").value = "";
+  $("#sell-description").value = "";
+  $("#sell-price").value = "";
+  $("#sell-error").hidden = true;
+  $("#sell-submit").disabled = false;
+
+  // One /api/listing call per visit to this screen; the person can edit or type over it
+  const token = ++sellDraftToken;
+  const status = $("#sell-ai-status");
+  status.textContent = "✨ Writing a title and description…";
+  const fallback = () => {
+    if (!$("#sell-title").value) $("#sell-title").value = describe(item).slice(0, 60);
+    if (!$("#sell-description").value) {
+      $("#sell-description").value = `Pre-loved ${item.color || ""} ${item.category || "piece"} from my wardrobe, ready for its next home.`.replace(/\s+/g, " ");
+    }
+  };
+  try {
+    const res = await callApi(
+      "/api/listing",
+      { item: { name: item.name || "", category: item.category, color: item.color, occasions: item.occasions || [], wears: item.wearCount || 0 } },
+      { timeoutMs: 20000 }
+    );
+    if (token !== sellDraftToken) return;
+    if (!$("#sell-title").value) $("#sell-title").value = res.title;
+    if (!$("#sell-description").value) $("#sell-description").value = res.description;
+    status.textContent = res.source === "mock" ? "✨ Drafted in test mode (not real Gemini). Edit anything." : "✨ Drafted by Gemini. Edit anything.";
+  } catch (err) {
+    if (token !== sellDraftToken) return;
+    console.warn("Listing draft unavailable:", err.message);
+    fallback();
+    status.textContent = "The stylist needs a short break, so this is a basic draft. Edit anything.";
+  }
+}
+
+$("#sell-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const item = await getRewearItem();
+  if (!item) return;
+  const title = $("#sell-title").value.trim();
+  const description = $("#sell-description").value.trim();
+  const price = Math.round(Number($("#sell-price").value));
+  const err = $("#sell-error");
+  const fail = (msg) => {
+    err.textContent = msg;
+    err.hidden = false;
+  };
+  if (!title) return fail("Add a title.");
+  if (!description) return fail("Add a short description.");
+  if (!Number.isFinite(price) || price <= 0) return fail(`Add a price in ${REWEAR_CURRENCY}.`);
+  if (getRewearStatus(item)) return fail("This piece is already in My Rewear.");
+
+  sellDraftToken++; // ignore a draft that arrives after listing
+  saveListings([
+    ...getListings(),
+    {
+      id: crypto.randomUUID ? crypto.randomUUID() : "listing_" + Date.now(),
+      itemId: item.id,
+      type: "sell",
+      status: "Listed",
+      title,
+      description,
+      price,
+      currency: REWEAR_CURRENCY,
+      itemName: describe(item),
+      category: item.category,
+      color: item.color,
+      createdAt: Date.now(),
+    },
+  ]);
+  toast(`Listed for ${formatLkr(price)} 🏷️`);
+  showScreen("my-rewear");
+});
+
+// ---------- Swap ----------
+async function renderRewearSwapScreen() {
+  const item = await getRewearItem();
+  if (!item) return showScreen("wardrobe");
+  $("#swap-item").innerHTML = rewearItemHtml(item);
+}
+
+$("#swap-item-submit")?.addEventListener("click", async () => {
+  const item = await getRewearItem();
+  if (!item) return;
+  if (getRewearStatus(item)) {
+    toast("This piece is already in My Rewear");
+    return showScreen("my-rewear");
+  }
+  item.swappable = true;
+  await saveItem(item);
+  awardKarma(KARMA_CONFIG.POINTS.MARK_SWAPPABLE, "Listed on Rewear");
+  toast("Listed on the swap feed 🔁");
+  showScreen("my-rewear");
+});
+
+// ---------- Donate ----------
+async function renderDonateScreen() {
+  const item = await getRewearItem();
+  if (!item) return showScreen("wardrobe");
+  $("#donate-item").innerHTML = rewearItemHtml(item);
+  donateCenterId = null;
+  $("#donate-submit").disabled = true;
+  $("#donate-centers").innerHTML = DONATION_CENTERS.map(
+    (c) => `
+      <button type="button" class="donate-center" data-donate-center="${c.id}">
+        <strong>${escapeHtml(c.name)}</strong>
+        <small>${escapeHtml(c.area)} · Example only</small>
+      </button>`
+  ).join("");
+}
+
+$("#donate-centers")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-donate-center]");
+  if (!btn) return;
+  donateCenterId = btn.dataset.donateCenter;
+  document.querySelectorAll("[data-donate-center]").forEach((b) => b.classList.toggle("selected", b === btn));
+  $("#donate-submit").disabled = false;
+});
+
+$("#donate-submit")?.addEventListener("click", async () => {
+  const item = await getRewearItem();
+  const center = DONATION_CENTERS.find((c) => c.id === donateCenterId);
+  if (!item || !center) return;
+  if (getRewearStatus(item)) {
+    toast("This piece is already in My Rewear");
+    return showScreen("my-rewear");
+  }
+  if (item.swappable) {
+    item.swappable = false; // donated pieces leave the swap feed
+    await saveItem(item);
+  }
+  saveListings([
+    ...getListings(),
+    {
+      id: crypto.randomUUID ? crypto.randomUUID() : "listing_" + Date.now(),
+      itemId: item.id,
+      type: "donate",
+      status: "Donated",
+      center: `${center.name} (${center.area})`,
+      itemName: describe(item),
+      category: item.category,
+      color: item.color,
+      createdAt: Date.now(),
+      donatedAt: Date.now(),
+    },
+  ]);
+  awardKarma(KARMA_CONFIG.POINTS.DONATE_ITEM, "Donated a piece");
+  toast("Marked as donated 💚");
+  showScreen("my-rewear");
+});
+
+// ---------- My Rewear ----------
+async function renderMyRewear() {
+  const [items, listings, requests] = [await getAllItems(), getListings(), getRequests()];
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const earnings = getEarnings();
+
+  $("#rewear-earnings").innerHTML = `
+    <strong>${formatLkr(earnings.total)}</strong>
+    <span>earned from ${earnings.entries.length} simulated sale${earnings.entries.length === 1 ? "" : "s"}</span>`;
+
+  // One row per item: stored sell/donate listings, plus swaps from the swap feed
+  const rows = [];
+  const seen = new Set();
+  for (const l of listings) {
+    const it = byId.get(l.itemId);
+    rows.push({
+      key: l.id,
+      status: l.status,
+      type: l.type,
+      listing: l,
+      name: l.title || l.itemName || (it ? describe(it) : "Removed item"),
+      itemId: l.itemId,
+      shareKey: `sell_${l.id}`,
+      photo: it ? itemIllustration(it, it.photo) : itemIllustration(l),
+      meta: l.type === "sell" ? formatLkr(l.price) : l.center || "",
+    });
+    seen.add(l.itemId);
+  }
+  for (const it of items) {
+    if (seen.has(it.id)) continue;
+    const st = getRewearStatus(it, listings, requests);
+    if (!st || st.type !== "swap") continue;
+    rows.push({ key: it.id, itemId: it.id, shareKey: `swap_${it.id}`, status: st.status, type: "swap", name: describe(it), photo: itemIllustration(it, it.photo), meta: "Open to swaps" });
+  }
+
+  const list = $("#my-rewear-list");
+  if (!rows.length) {
+    list.innerHTML = `
+      <div class="notice">
+        <div class="notice-icon">♻️</div>
+        <p>Nothing here yet.<br />Open a piece in your Closet and tap <strong>Sell</strong>, <strong>Swap</strong> or <strong>Donate</strong>.</p>
+        <button class="btn-secondary" data-go="wardrobe">Go to Closet</button>
+      </div>`;
+    return;
+  }
+
+  const typeLabel = { sell: "Sell", swap: "Swap", donate: "Donate" };
+  const shares = getFriendShares();
+  list.innerHTML = REWEAR_STATUSES.map((status) => {
+    const group = rows.filter((r) => r.status === status);
+    if (!group.length) return "";
+    return `
+      <section class="rewear-group">
+        <h3 class="rewear-group-title">${status} <span class="seg-count">${group.length}</span></h3>
+        ${group
+          .map(
+            (r) => `
+          <article class="rewear-row">
+            <img src="${r.photo}" alt="" />
+            <div class="rewear-row-info">
+              <strong>${escapeHtml(r.name)}</strong>
+              <small>${typeLabel[r.type] || ""}${r.meta ? ` · ${escapeHtml(r.meta)}` : ""}</small>
+            </div>
+            ${
+              r.type === "sell" && r.status === "Listed"
+                ? `<button type="button" class="btn-card-small primary" data-mark-sold="${r.listing.id}">Mark as sold</button>`
+                : ""
+            }
+            ${
+              (r.type === "sell" || r.type === "swap") && r.status === "Listed"
+                ? `<label class="toggle-row share-toggle">
+                     <span>Share with friends</span>
+                     <input type="checkbox" data-share-key="${r.shareKey}" data-share-item="${r.itemId}" data-share-listing="${r.listing ? r.listing.id : ""}" data-share-type="${r.type}" ${shares[r.shareKey] ? "checked" : ""} />
+                     <span class="switch"></span>
+                   </label>`
+                : ""
+            }
+          </article>`
+          )
+          .join("")}
+      </section>`;
+  }).join("");
+}
+
+// Simulated sale: no money moves, it only records the amount in weari_earnings
+$("#my-rewear-list")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-mark-sold]");
+  if (!btn) return;
+  const list = getListings();
+  const l = list.find((x) => x.id === btn.dataset.markSold);
+  if (!l || l.status !== "Listed") return;
+  l.status = "Sold";
+  l.soldAt = Date.now();
+  saveListings(list);
+
+  const earnings = getEarnings();
+  earnings.total += Number(l.price) || 0;
+  earnings.entries.push({ listingId: l.id, itemName: l.title || l.itemName, amount: Number(l.price) || 0, soldAt: l.soldAt });
+  saveEarnings(earnings);
+
+  awardKarma(KARMA_CONFIG.POINTS.SELL_ITEM, "Sold a piece");
+  syncSharedListingStatus(`sell_${l.id}`, "Sold");
+  toast(`Sold for ${formatLkr(l.price)} (simulated) 🎉`);
+  renderMyRewear();
+});
+
+// Counts for Insights
+function getRewearCounts() {
+  const listings = getListings();
+  return {
+    sold: listings.filter((l) => l.status === "Sold").length,
+    donated: listings.filter((l) => l.status === "Donated").length,
+    swapped: getCompletedSwapsCount(),
+    earned: getEarnings().total,
+  };
+}
 
 // =====================================================
 // Insights screen
@@ -2590,6 +4073,19 @@ async function renderInsights() {
   const completedSwaps = getCompletedSwapsCount();
   const purchasesAvoided = getPurchasesAvoidedCount();
   const impact = IMPACT_CONFIG.calculate(completedSwaps, purchasesAvoided);
+
+  const avoidedEl = $("#stat-purchases-avoided");
+  if (avoidedEl) avoidedEl.textContent = purchasesAvoided;
+  const consideredEl = $("#stat-considered");
+  if (consideredEl) consideredEl.textContent = getConsideredNotBoughtCount();
+
+  // Rewear: sold, donated and swapped pieces
+  const rewear = getRewearCounts();
+  const setStat = (sel, value) => { const el = $(sel); if (el) el.textContent = value; };
+  setStat("#stat-rewear-sold", rewear.sold);
+  setStat("#stat-rewear-donated", rewear.donated);
+  setStat("#stat-rewear-swapped", rewear.swapped);
+  setStat("#stat-rewear-earned", formatLkr(rewear.earned));
 
   const countsEl = $("#impact-counts");
   if (countsEl) countsEl.textContent = `Estimated · ${completedSwaps} completed swap${completedSwaps === 1 ? "" : "s"} · ${purchasesAvoided} purchase${purchasesAvoided === 1 ? "" : "s"} avoided`;
@@ -3047,74 +4543,6 @@ $("#ob-btn-starter-upload")?.addEventListener("click", () => {
   $("#photo-input")?.click();
 });
 
-// Demo Wardrobe Loader
-const DEMO_WARDROBE_ITEMS = [
-  {
-    name: "Linen button-down shirt",
-    category: "top",
-    color: "white",
-    occasions: ["casual", "work", "travel"],
-    swappable: true,
-  },
-  {
-    name: "High-waist tailored trousers",
-    category: "bottom",
-    color: "beige",
-    occasions: ["work", "casual", "date night"],
-    swappable: false,
-  },
-  {
-    name: "Wool camel coat",
-    category: "outerwear",
-    color: "brown",
-    occasions: ["work", "formal", "travel"],
-    swappable: true,
-  },
-  {
-    name: "Classic leather loafers",
-    category: "shoes",
-    color: "black",
-    occasions: ["work", "casual", "formal"],
-    swappable: false,
-  },
-  {
-    name: "Silk slip dress",
-    category: "dress",
-    color: "green",
-    occasions: ["party", "wedding", "date night"],
-    swappable: true,
-  },
-  {
-    name: "Woven straw tote",
-    category: "accessory",
-    color: "brown",
-    occasions: ["casual", "travel"],
-    swappable: false,
-  },
-];
-
-async function loadDemoWardrobe() {
-  for (const it of DEMO_WARDROBE_ITEMS) {
-    const id = "demo_" + Math.random().toString(36).slice(2, 9);
-    const photo = typeof placeholderImage === "function"
-      ? placeholderImage(it.category, it.color)
-      : "";
-    await saveItem({
-      id,
-      name: it.name,
-      category: it.category,
-      color: it.color,
-      occasions: it.occasions,
-      swappable: it.swappable,
-      photo,
-      createdAt: Date.now(),
-    });
-  }
-  await renderWardrobe();
-  await updateStarterChecklist();
-  toast("Demo wardrobe loaded ✨");
-}
-
 $("#ob-btn-load-demo")?.addEventListener("click", async () => {
   await loadDemoWardrobe();
 });
@@ -3131,7 +4559,9 @@ function renderProfileCard() {
   const card = $("#profile-card");
   if (!card) return;
 
-  const storedProfile = localStorage.getItem(PROFILE_KEY);
+  const stored = readStoredProfile();
+  const storedProfile =
+    stored.completedAt || ["age", "closet", "sustainability", "pieces", "budget"].some((k) => k in stored);
   const isDismissed = localStorage.getItem(PROFILE_DISMISSED_KEY);
 
   if (storedProfile) {
@@ -3171,8 +4601,7 @@ $("#btn-save-profile")?.addEventListener("click", () => {
   const pieces = $("#profile-pills-pieces .profile-pill.selected")?.dataset.val || null;
   const budget = $("#profile-pills-budget .profile-pill.selected")?.dataset.val || null;
 
-  const profile = { age, closet, sustainability, pieces, budget, completedAt: Date.now() };
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  mergeStoredProfile({ age, closet, sustainability, pieces, budget, completedAt: Date.now() });
   awardKarma(25, "Completed style profile");
 
   $("#profile-card-body").hidden = true;
@@ -3389,7 +4818,7 @@ function getDemoWardrobeItems() {
       category: "shoes",
       color: "black",
       occasions: ["party", "wedding", "formal"],
-      photo: typeof placeholderImage === "function" ? placeholderImage("shoes", "black") : "",
+      photo: typeof placeholderImage === "function" ? placeholderImage("shoes", "black", "heel") : "",
       swappable: true,
       wearCount: 0,
       lastWorn: null,
@@ -3425,11 +4854,23 @@ function getDemoWardrobeItems() {
       category: "accessory",
       color: "beige",
       occasions: ["casual", "travel", "beach"],
-      photo: typeof placeholderImage === "function" ? placeholderImage("accessory", "beige") : "",
+      photo: typeof placeholderImage === "function" ? placeholderImage("accessory", "beige", "bag") : "",
       swappable: false,
       wearCount: 7,
       lastWorn: new Date(now - 8 * dayMs).toISOString(),
       createdAt: now - 20 * dayMs,
+    },
+    {
+      id: "demo_acc_2",
+      name: "Slim leather belt",
+      category: "accessory",
+      color: "brown",
+      occasions: ["work", "casual", "date night"],
+      photo: typeof placeholderImage === "function" ? placeholderImage("accessory", "brown", "belt") : "",
+      swappable: false,
+      wearCount: 10,
+      lastWorn: new Date(now - 6 * dayMs).toISOString(),
+      createdAt: now - 22 * dayMs,
     },
   ];
 }
@@ -3466,41 +4907,51 @@ async function loadDemoWardrobe() {
   renderSavedOutfits();
   if (typeof renderFavorites === "function") renderFavorites();
   if (typeof renderWeeklyPlan === "function") renderWeeklyPlan();
-  toast("Loaded 14 demo wardrobe pieces ✨");
+  toast(`Loaded ${demoItems.length} demo wardrobe pieces ✨`);
+}
+
+// Every storage key Weari has ever used (current + legacy). Keys are not renamed;
+// we just make sure Reset clears all of them.
+function getAllWeariStorageKeys() {
+  const known = [
+    BACKUP_ITEMS_KEY, KARMA_STORAGE_KEY, COMPLETED_SWAPS_KEY, PURCHASES_AVOIDED_KEY,
+    SAVED_OUTFITS_KEY, REQUESTS_KEY, ONBOARDING_COMPLETED_KEY, ONBOARDING_ANSWERS_KEY,
+    PROFILE_KEY, PROFILE_DISMISSED_KEY, PROFILE_FIRST_NAME_KEY, PROFILE_EMAIL_KEY,
+    WEARI_PLUS_WAITLIST_KEY, FAVORITES_STORAGE_KEY, WEEKLY_PLAN_KEY, PLAN_REPEAT_KEY,
+    CUSTOM_LABELS_KEY, LISTINGS_KEY, EARNINGS_KEY, FRIEND_SHARES_KEY,
+    "weari-favorite-outfits",
+    ...LEGACY_ITEM_STORAGE_KEYS, ...LEGACY_WEAR_COUNT_KEYS, ...LEGACY_OUTFIT_KEYS,
+    ...LEGACY_KARMA_KEYS, ...LEGACY_REQUEST_KEYS,
+  ];
+  const keys = new Set();
+  // Include both the dash and underscore spelling of every key
+  known.forEach((k) => {
+    keys.add(k);
+    keys.add(k.replace(/_/g, "-"));
+    keys.add(k.replace(/-/g, "_"));
+  });
+  // Catch anything else saved under a "weari" name
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /^weari/i.test(k)) keys.add(k);
+    }
+  } catch {}
+  return [...keys];
 }
 
 async function resetApp() {
-  if (!confirm("Reset all data? This will clear your wardrobe, saved outfits, and karma.")) return;
+  if (!confirm("Reset all data? This permanently clears your wardrobe, photos, outfits, plans, swaps, karma and profile on this device.")) return;
   try {
-    await dbRun("readwrite", (s) => s.clear());
+    await dbRun("readwrite", (s) => s.clear()); // the "weari" IndexedDB (items + photos)
   } catch (e) {
     console.warn("DB reset error:", e);
   }
   try {
-    localStorage.removeItem(BACKUP_ITEMS_KEY);
-    localStorage.removeItem(KARMA_STORAGE_KEY);
-    localStorage.removeItem("weari-saved-outfits");
-    localStorage.removeItem("weari_favorite_outfits");
-    localStorage.removeItem("weari_weekly_plan");
-    localStorage.removeItem("weari_plan_repeat_weekly");
-    localStorage.removeItem(REQUESTS_KEY);
-    localStorage.removeItem(COMPLETED_SWAPS_KEY);
-    localStorage.removeItem(PURCHASES_AVOIDED_KEY);
-    localStorage.removeItem("weari_plus_waitlist");
-    localStorage.removeItem("weari_profile_first_name");
-    localStorage.removeItem("weari_profile_email");
+    getAllWeariStorageKeys().forEach((k) => localStorage.removeItem(k));
   } catch {}
-  closeSettings();
-  showScreen("wardrobe");
-  renderWardrobe();
-  renderProfileScreen();
-  renderKarma();
-  renderInsights();
-  renderSavedOutfits();
-  if (typeof renderFavorites === "function") renderFavorites();
-  if (typeof renderWeeklyPlan === "function") renderWeeklyPlan();
-  updateKarmaChip();
-  toast("App reset to initial state");
+  // Reload so nothing still held in memory gets saved back
+  location.reload();
 }
 
 // Event bindings for demo and reset buttons
@@ -3703,15 +5154,39 @@ function toggleFavoriteOutfit(outfit) {
   }
 }
 
+// The label sheet either favorites an outfit or just labels a saved outfit
+let labelSheetMode = "favorite";
+let labelSheetSelected = "";
+
 function promptFavoriteOutfit(outfit) {
+  openOutfitLabelSheet(outfit, "favorite");
+}
+
+function openOutfitLabelSheet(outfit, mode) {
   pendingFavOutfit = outfit;
+  labelSheetMode = mode;
+  labelSheetSelected = outfit.label || "";
+  const isFav = mode === "favorite";
+  $("#fav-label-title").textContent = isFav ? "Favorite look ❤️" : "Label outfit";
+  $("#fav-label-sub").textContent = isFav ? "Add an optional label to organize this outfit" : `Pick a label for "${outfit.name}"`;
+  $("#btn-save-fav-label").textContent = isFav ? "Save favorite" : "Save label";
+  $("#btn-skip-fav-label").textContent = isFav ? "Save without label" : "Remove label";
+  renderFavLabelPresets();
   const sheet = $("#fav-label-sheet");
   const backdrop = $("#fav-label-backdrop");
-  const input = $("#fav-custom-label");
-  if (input) input.value = outfit.label || "";
-  document.querySelectorAll(".fav-preset-chip").forEach((c) => c.classList.remove("selected"));
   if (sheet) sheet.hidden = false;
   if (backdrop) backdrop.hidden = false;
+}
+
+function renderFavLabelPresets() {
+  const box = $("#fav-label-presets");
+  if (!box) return;
+  box.innerHTML = labelChipsHtml({
+    selected: labelSheetSelected,
+    attr: "data-label-preset",
+    chipClass: "fav-preset-chip",
+    extra: labelSheetSelected ? [labelSheetSelected] : [],
+  });
 }
 
 function closeFavLabelSheet() {
@@ -3725,19 +5200,30 @@ function closeFavLabelSheet() {
 $("#fav-label-close")?.addEventListener("click", closeFavLabelSheet);
 $("#fav-label-backdrop")?.addEventListener("click", closeFavLabelSheet);
 
-document.querySelectorAll(".fav-preset-chip").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".fav-preset-chip").forEach((b) => b.classList.toggle("selected", b === btn));
-    const input = $("#fav-custom-label");
-    if (input) input.value = btn.dataset.labelPreset;
-  });
+$("#fav-label-presets")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
+  const btn = e.target.closest("[data-label-preset]");
+  if (!btn) return;
+  const value = btn.dataset.labelPreset;
+  labelSheetSelected = labelSheetSelected.toLowerCase() === value.toLowerCase() ? "" : value;
+  renderFavLabelPresets();
 });
 
-$("#btn-save-fav-label")?.addEventListener("click", () => {
+function commitOutfitLabel(label) {
   if (!pendingFavOutfit) return;
-  const customInput = $("#fav-custom-label");
-  const selectedPreset = document.querySelector(".fav-preset-chip.selected")?.dataset.labelPreset;
-  const label = (customInput && customInput.value.trim()) || selectedPreset || "";
+  if (labelSheetMode === "saved") {
+    const list = getSavedOutfits();
+    const target = list.find((o) => o.id === pendingFavOutfit.id);
+    if (target) target.label = label;
+    saveSavedOutfits(list);
+    closeFavLabelSheet();
+    renderSavedOutfits();
+    toast(label ? `Labeled ${labelDisplay(label)}` : "Label removed");
+    return;
+  }
 
   const list = getFavoriteOutfits();
   const idx = list.findIndex((f) => f.id === pendingFavOutfit.id);
@@ -3755,29 +5241,11 @@ $("#btn-save-fav-label")?.addEventListener("click", () => {
   closeFavLabelSheet();
   renderSavedOutfits();
   renderFavorites(activeFavFilter);
-  toast(`Saved to favorites ${label ? `(${label}) ` : ""}❤️`);
-});
+  toast(`Saved to favorites ${label ? `(${labelDisplay(label)}) ` : ""}❤️`);
+}
 
-$("#btn-skip-fav-label")?.addEventListener("click", () => {
-  if (!pendingFavOutfit) return;
-  const list = getFavoriteOutfits();
-  const idx = list.findIndex((f) => f.id === pendingFavOutfit.id);
-  const favObj = {
-    ...pendingFavOutfit,
-    label: "",
-    favoritedAt: Date.now(),
-  };
-  if (idx >= 0) {
-    list[idx] = favObj;
-  } else {
-    list.unshift(favObj);
-  }
-  saveFavoriteOutfits(list);
-  closeFavLabelSheet();
-  renderSavedOutfits();
-  renderFavorites(activeFavFilter);
-  toast("Saved to favorites ❤️");
-});
+$("#btn-save-fav-label")?.addEventListener("click", () => commitOutfitLabel(labelSheetSelected));
+$("#btn-skip-fav-label")?.addEventListener("click", () => commitOutfitLabel(""));
 
 // Manual outfit builder favorite button
 $("#btn-manual-fav")?.addEventListener("click", () => {
@@ -3794,6 +5262,7 @@ $("#btn-manual-fav")?.addEventListener("click", () => {
     occasion: "casual",
     createdAt: Date.now(),
     items: activePieces,
+    label: manualLabel,
   };
   promptFavoriteOutfit(outfit);
 });
@@ -3804,12 +5273,19 @@ function renderFavorites(filter = activeFavFilter) {
   const container = $("#favorites-list");
   if (!container) return;
 
-  // Filter chips
-  document.querySelectorAll("#fav-label-filters [data-fav-filter]").forEach((b) => {
-    b.classList.toggle("selected", b.dataset.favFilter.toLowerCase() === filter.toLowerCase());
-  });
-
   const list = getFavoriteOutfits();
+
+  // Filter chips: All, built-in, my labels, then any other label already on an outfit
+  const chipsBox = $("#fav-label-filters");
+  if (chipsBox) {
+    chipsBox.innerHTML = labelChipsHtml({
+      selected: filter,
+      attr: "data-fav-filter",
+      withAll: true,
+      extra: list.map((f) => f.label),
+    });
+  }
+
   const filtered = list.filter((f) => {
     if (filter === "all") return true;
     return (f.label || "").toLowerCase() === filter.toLowerCase();
@@ -3818,7 +5294,7 @@ function renderFavorites(filter = activeFavFilter) {
   if (filtered.length === 0) {
     container.innerHTML = `
       <div style="text-align:center; padding:30px 10px; color:var(--muted);">
-        <p style="font-size:14px; margin:0 0 10px;">No favorites saved${filter !== "all" ? ` under "${filter}"` : ""} yet.</p>
+        <p style="font-size:14px; margin:0 0 10px;">No favorites saved${filter !== "all" ? ` under "${escapeHtml(labelDisplay(filter))}"` : ""} yet.</p>
         <small>Tap the heart on any saved outfit or styled look to add it here.</small>
       </div>`;
     return;
@@ -3826,25 +5302,15 @@ function renderFavorites(filter = activeFavFilter) {
 
   container.innerHTML = filtered
     .map(
-      (f) => `
-    <article class="fav-outfit-card" data-fav-id="${f.id}">
-      <div class="fav-card-header">
-        <div class="fav-card-title-group">
-          <h4 class="fav-card-title">${escapeHtml(f.name)}</h4>
-          ${f.label ? `<span class="fav-card-label-tag">${escapeHtml(f.label)}</span>` : ""}
-        </div>
-        <button type="button" class="fav-heart-btn active" data-unfav-id="${f.id}" title="Remove from favorites">♥</button>
-      </div>
-      <div class="fav-strip">
-        ${(f.items || []).map((it) => `<img class="fav-strip-img" src="${it.photo}" alt="${describe(it)}" title="${describe(it)}" />`).join("")}
-      </div>
-      <div class="fav-card-actions">
-        <button type="button" class="btn-primary" style="padding:10px 18px; font-size:13px;" data-wear-fav="${f.id}">
-          ✓ I wore this
-        </button>
-        <button type="button" class="btn-secondary" style="padding:10px 18px; font-size:13px;" data-edit-fav-label="${f.id}">
-          Edit label
-        </button>
+      (f, i) => `
+    <article class="collage-tile-wrap fav-tile" data-fav-id="${f.id}">
+      ${collageTileHtml((f.items || []).map((it) => it.photo), i)}
+      <button type="button" class="fav-heart-btn active fav-tile-heart" data-unfav-id="${f.id}" title="Remove from favorites">♥</button>
+      <h4 class="collage-name">${escapeHtml(f.name)}</h4>
+      ${f.label ? `<span class="fav-card-label-tag">${escapeHtml(labelDisplay(f.label))}</span>` : ""}
+      <div class="fav-tile-actions">
+        <button type="button" class="fav-tile-action" data-wear-fav="${f.id}">✓ Wore it</button>
+        <button type="button" class="fav-tile-action" data-edit-fav-label="${f.id}">Label</button>
       </div>
     </article>`
     )
@@ -3903,9 +5369,314 @@ $("#favorites-list")?.addEventListener("click", async (e) => {
 
 // Favorites filter chips click listener
 $("#fav-label-filters")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
   const chip = e.target.closest("[data-fav-filter]");
   if (!chip) return;
   renderFavorites(chip.dataset.favFilter);
+});
+
+// =====================================================
+// Custom labels (my own outfit categories with an emoji)
+// Outfits keep storing the label name as a plain string, so built-in
+// and older labels keep working unchanged.
+// =====================================================
+const LABEL_EMOJI_PICKS = ["🏋️", "🥂", "✈️", "☕", "🎉", "🌴", "💼", "🏡"];
+
+function getCustomLabels() {
+  try {
+    const list = JSON.parse(localStorage.getItem(CUSTOM_LABELS_KEY) || "[]");
+    if (Array.isArray(list)) return list.filter((l) => l && l.id && l.name);
+  } catch {}
+  return [];
+}
+
+function saveCustomLabels(list) {
+  try {
+    localStorage.setItem(CUSTOM_LABELS_KEY, JSON.stringify(list));
+  } catch {}
+}
+
+function findCustomLabel(name) {
+  const n = String(name || "").toLowerCase();
+  return getCustomLabels().find((l) => l.name.toLowerCase() === n) || null;
+}
+
+function labelDisplay(name) {
+  const custom = findCustomLabel(name);
+  return custom && custom.emoji ? `${custom.emoji} ${custom.name}` : String(name || "");
+}
+
+// Chip row: [All] + built-in + my labels + other labels found on outfits + [+ New label]
+function labelChipsHtml({ selected = "", attr, withAll = false, extra = [], chipClass = "chip" }) {
+  const seen = new Set();
+  const names = [];
+  const add = (n) => {
+    const v = String(n || "").trim();
+    if (v && !seen.has(v.toLowerCase())) {
+      seen.add(v.toLowerCase());
+      names.push(v);
+    }
+  };
+  BUILTIN_LABELS.forEach(add);
+  getCustomLabels().forEach((l) => add(l.name));
+  extra.forEach(add);
+
+  const sel = String(selected || "").toLowerCase();
+  const chip = (value, text) =>
+    `<button type="button" class="${chipClass} label-chip ${sel === value.toLowerCase() ? "selected" : ""}" ${attr}="${escapeHtml(value)}">${escapeHtml(text)}</button>`;
+
+  return (
+    (withAll ? chip("all", "All") : "") +
+    names.map((n) => chip(n, labelDisplay(n))).join("") +
+    `<button type="button" class="${chipClass} label-chip label-chip-new" data-open-label-manager>+ New label</button>`
+  );
+}
+
+// ---------- Create your own: label for the outfit being built ----------
+function renderManualLabelChips() {
+  const box = $("#manual-label-chips");
+  if (!box) return;
+  box.innerHTML = labelChipsHtml({
+    selected: manualLabel,
+    attr: "data-manual-label",
+    extra: manualLabel ? [manualLabel] : [],
+  });
+}
+
+$("#manual-label-chips")?.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-label-manager]")) {
+    openLabelManager();
+    return;
+  }
+  const chip = e.target.closest("[data-manual-label]");
+  if (!chip) return;
+  const value = chip.dataset.manualLabel;
+  manualLabel = manualLabel.toLowerCase() === value.toLowerCase() ? "" : value;
+  renderManualLabelChips();
+});
+
+// ---------- Stylist: label for the suggested look ----------
+function renderStylistLabelChips() {
+  const box = $("#stylist-label-chips");
+  if (!box) return;
+  box.innerHTML = labelChipsHtml({
+    selected: stylistLabel,
+    attr: "data-stylist-label",
+    extra: stylistLabel ? [stylistLabel] : [],
+  });
+}
+
+// Re-render everything that shows labels
+function refreshLabelViews() {
+  renderManualLabelChips();
+  renderStylistLabelChips();
+  renderSavedOutfits();
+  renderFavorites(activeFavFilter);
+  if (!$("#fav-label-sheet")?.hidden) renderFavLabelPresets();
+  renderLabelManager();
+}
+
+// Rename or clear a label on every stored outfit (saved, favorites, weekly plan)
+function relabelOutfits(oldName, newName) {
+  const match = (o) => o && (o.label || "").toLowerCase() === oldName.toLowerCase();
+  let count = 0;
+
+  // Only write a list back when one of its outfits actually changed
+  const update = (list) => {
+    let changed = 0;
+    list.forEach((o) => { if (match(o)) { o.label = newName; changed++; } });
+    return changed;
+  };
+
+  const saved = getSavedOutfits();
+  const savedChanged = update(saved);
+  if (savedChanged) saveSavedOutfits(saved);
+
+  const favs = getFavoriteOutfits();
+  const favsChanged = update(favs);
+  if (favsChanged) saveFavoriteOutfits(favs);
+  count = savedChanged + favsChanged;
+
+  const plan = getWeeklyPlan();
+  if (update(Object.values(plan))) saveWeeklyPlan(plan);
+
+  if (activeFavFilter.toLowerCase() === oldName.toLowerCase()) activeFavFilter = newName || "all";
+  if (activeSavedFilter.toLowerCase() === oldName.toLowerCase()) activeSavedFilter = newName || "all";
+  if (manualLabel.toLowerCase() === oldName.toLowerCase()) manualLabel = newName;
+  if (stylistLabel.toLowerCase() === oldName.toLowerCase()) stylistLabel = newName;
+  if (labelSheetSelected.toLowerCase() === oldName.toLowerCase()) labelSheetSelected = newName;
+  return count;
+}
+
+function countOutfitsWithLabel(name) {
+  const n = name.toLowerCase();
+  return [...getSavedOutfits(), ...getFavoriteOutfits()].filter((o) => (o.label || "").toLowerCase() === n).length;
+}
+
+// ---------- Label manager sheet ----------
+let labelRenamingId = null;
+let labelConfirmAction = null;
+
+function openLabelManager() {
+  resetLabelForm();
+  hideLabelConfirm();
+  renderLabelManager();
+  $("#label-manager-sheet").hidden = false;
+  $("#label-manager-backdrop").hidden = false;
+  $("#label-name-input")?.focus();
+}
+
+function closeLabelManager() {
+  $("#label-manager-sheet").hidden = true;
+  $("#label-manager-backdrop").hidden = true;
+  resetLabelForm();
+  hideLabelConfirm();
+}
+
+function renderLabelManager() {
+  const picks = $("#label-emoji-picks");
+  if (picks && !picks.childElementCount) {
+    picks.innerHTML = LABEL_EMOJI_PICKS.map((em) => `<button type="button" class="label-emoji-pick" data-emoji-pick="${em}">${em}</button>`).join("");
+  }
+  const listEl = $("#label-list");
+  if (!listEl) return;
+  const labels = getCustomLabels();
+  listEl.innerHTML = labels.length
+    ? `<span class="field-label">My labels</span>` +
+      labels.map((l) => `
+        <div class="label-row">
+          <span class="label-row-name">${escapeHtml(l.emoji || "🏷️")} ${escapeHtml(l.name)}</span>
+          <button type="button" class="btn-link-action" data-label-rename="${l.id}">Rename</button>
+          <button type="button" class="btn-danger-link" data-label-delete="${l.id}">Delete</button>
+        </div>`).join("")
+    : `<p class="label-empty">No labels of your own yet. Built-in labels: ${BUILTIN_LABELS.join(", ")}.</p>`;
+}
+
+function resetLabelForm() {
+  labelRenamingId = null;
+  $("#label-emoji-input").value = "";
+  $("#label-name-input").value = "";
+  $("#label-form-title").textContent = "New label";
+  $("#label-form-submit").textContent = "Add label";
+  $("#label-form-cancel").hidden = true;
+  showLabelError("");
+}
+
+function showLabelError(msg) {
+  const el = $("#label-form-error");
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+
+function showLabelConfirm(text, okText, action) {
+  labelConfirmAction = action;
+  $("#label-confirm-text").textContent = text;
+  $("#label-confirm-ok").textContent = okText;
+  $("#label-confirm").hidden = false;
+}
+
+function hideLabelConfirm() {
+  labelConfirmAction = null;
+  $("#label-confirm").hidden = true;
+}
+
+$("#label-manager-close")?.addEventListener("click", closeLabelManager);
+$("#label-manager-backdrop")?.addEventListener("click", closeLabelManager);
+$("#label-form-cancel")?.addEventListener("click", resetLabelForm);
+$("#label-confirm-cancel")?.addEventListener("click", hideLabelConfirm);
+$("#label-confirm-ok")?.addEventListener("click", () => {
+  const action = labelConfirmAction;
+  hideLabelConfirm();
+  if (action) action();
+});
+
+$("#label-emoji-picks")?.addEventListener("click", (e) => {
+  const pick = e.target.closest("[data-emoji-pick]");
+  if (pick) $("#label-emoji-input").value = pick.dataset.emojiPick;
+});
+
+$("#label-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("#label-name-input").value.trim().replace(/\s+/g, " ");
+  const emoji = $("#label-emoji-input").value.trim() || "🏷️";
+  if (!name) return showLabelError("Give your label a short name.");
+  if (name.toLowerCase() === "all") return showLabelError("Pick a different name.");
+
+  const labels = getCustomLabels();
+  const clash =
+    BUILTIN_LABELS.some((b) => b.toLowerCase() === name.toLowerCase()) ||
+    labels.some((l) => l.id !== labelRenamingId && l.name.toLowerCase() === name.toLowerCase());
+  if (clash) return showLabelError(`You already have a "${name}" label.`);
+  showLabelError("");
+
+  if (!labelRenamingId) {
+    labels.push({ id: "label_" + Date.now(), name, emoji, createdAt: Date.now() });
+    saveCustomLabels(labels);
+    resetLabelForm();
+    refreshLabelViews();
+    toast(`Added label ${emoji} ${name}`);
+    return;
+  }
+
+  const target = labels.find((l) => l.id === labelRenamingId);
+  if (!target) return resetLabelForm();
+  const oldName = target.name;
+  const used = countOutfitsWithLabel(oldName);
+  showLabelConfirm(
+    `Rename "${target.emoji} ${oldName}" to "${emoji} ${name}"?${used ? ` ${used} outfit${used === 1 ? "" : "s"} will move to the new name.` : ""}`,
+    "Rename",
+    () => {
+      const fresh = getCustomLabels();
+      const t = fresh.find((l) => l.id === target.id);
+      if (!t) return;
+      t.name = name;
+      t.emoji = emoji;
+      saveCustomLabels(fresh);
+      if (oldName !== name) relabelOutfits(oldName, name);
+      resetLabelForm();
+      refreshLabelViews();
+      toast(`Renamed to ${emoji} ${name}`);
+    }
+  );
+});
+
+$("#label-list")?.addEventListener("click", (e) => {
+  const renameBtn = e.target.closest("[data-label-rename]");
+  if (renameBtn) {
+    const l = getCustomLabels().find((x) => x.id === renameBtn.dataset.labelRename);
+    if (!l) return;
+    hideLabelConfirm();
+    labelRenamingId = l.id;
+    $("#label-emoji-input").value = l.emoji || "";
+    $("#label-name-input").value = l.name;
+    $("#label-form-title").textContent = `Rename ${l.name}`;
+    $("#label-form-submit").textContent = "Save name";
+    $("#label-form-cancel").hidden = false;
+    showLabelError("");
+    $("#label-name-input").focus();
+    return;
+  }
+
+  const deleteBtn = e.target.closest("[data-label-delete]");
+  if (deleteBtn) {
+    const l = getCustomLabels().find((x) => x.id === deleteBtn.dataset.labelDelete);
+    if (!l) return;
+    const used = countOutfitsWithLabel(l.name);
+    showLabelConfirm(
+      `Delete "${l.emoji} ${l.name}"?${used ? ` ${used} outfit${used === 1 ? "" : "s"} will lose this label (the outfits stay).` : ""}`,
+      "Delete",
+      () => {
+        saveCustomLabels(getCustomLabels().filter((x) => x.id !== l.id));
+        relabelOutfits(l.name, "");
+        if (labelRenamingId === l.id) resetLabelForm();
+        refreshLabelViews();
+        toast(`Deleted label ${l.name}`);
+      }
+    );
+  }
 });
 
 // =====================================================
@@ -3946,6 +5717,42 @@ function isPlanRepeatWeekly() {
   }
 }
 
+// Week / Month view of the plan (kept in memory only, no storage key)
+let planView = "week";
+let planMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let openPlanDay = null; // { key, date } while the day sheet is open
+
+const PLAN_KEY_BY_JS_DAY = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+function planLocalDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Monday of the week containing `d`, at local midnight
+function planWeekStart(d) {
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  return start;
+}
+
+// A date shows its weekday's outfit if it falls in this week, or any week when repeating
+function planDateIsPlannable(date) {
+  if (isPlanRepeatWeekly()) return true;
+  const start = planWeekStart(new Date());
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+  return date >= start && date < end;
+}
+
+function planThumbHtml(outfit) {
+  const items = (outfit.items || []).slice(0, 4);
+  if (!items.length) return "";
+  if (items.length === 1) {
+    return `<img class="plan-cell-img" src="${items[0].photo}" alt="${describe(items[0])}" />`;
+  }
+  return `<div class="plan-cell-collage">${items.map((it) => `<img src="${it.photo}" alt="" />`).join("")}</div>`;
+}
+
 function renderWeeklyPlan() {
   const strip = $("#plan-days-strip");
   if (!strip) return;
@@ -3955,60 +5762,143 @@ function renderWeeklyPlan() {
   const repeatCheckbox = $("#plan-repeat-checkbox");
   if (repeatCheckbox) repeatCheckbox.checked = isRepeat;
 
-  // Determine current day of week (0 is Sunday, 1 is Monday, etc.)
-  const dayIdx = new Date().getDay();
-  const dayKeyMap = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-  const currentTodayKey = dayKeyMap[dayIdx];
-  const todayDateStr = new Date().toISOString().slice(0, 10);
+  document.querySelectorAll("#plan-view-toggle [data-plan-view]").forEach((b) => b.classList.toggle("active", b.dataset.planView === planView));
+  const monthNav = $("#plan-month-nav");
+  if (monthNav) monthNav.hidden = planView !== "month";
 
-  strip.innerHTML = PLAN_DAYS.map((day) => {
-    const isToday = day.key === currentTodayKey;
-    const assigned = plan[day.key] || null;
-    const isWornToday = assigned && assigned.lastWornDate === todayDateStr;
+  const today = new Date();
+  const currentTodayKey = PLAN_KEY_BY_JS_DAY[today.getDay()];
+  const todayDateStr = today.toISOString().slice(0, 10);
 
-    return `
-      <div class="plan-day-card ${isToday ? "today" : ""} ${isWornToday ? "worn" : ""}" data-day-key="${day.key}">
-        <div class="plan-day-header">
-          <h4 class="plan-day-name">${day.name} ${isToday ? `<span class="plan-day-badge-today">Today</span>` : ""}</h4>
-          ${isWornToday ? `<span style="font-size:11px; font-weight:600; color:#2f8f5b;">✓ Worn</span>` : ""}
-        </div>
+  if (planView === "week") {
+    strip.className = "plan-days-strip plan-week-grid";
+    const weekStart = planWeekStart(today);
+    strip.innerHTML = PLAN_DAYS.map((day, i) => {
+      const date = new Date(weekStart);
+      date.setDate(date.getDate() + i);
+      const assigned = plan[day.key] || null;
+      const isToday = day.key === currentTodayKey;
+      const isWornToday = assigned && assigned.lastWornDate === todayDateStr;
+      return `
+        <button type="button" class="plan-cell ${isToday ? "today" : ""} ${isWornToday ? "worn" : ""}"
+          data-plan-open-day="${day.key}" data-plan-open-date="${planLocalDateStr(date)}"
+          aria-label="${day.name}${assigned ? `: ${escapeHtml(assigned.name)}` : ", nothing planned"}">
+          <span class="plan-cell-letter">${day.name[0]}</span>
+          <span class="plan-cell-date">${date.getDate()}</span>
+          <span class="plan-cell-thumb collage-${COLLAGE_COLORS[i % COLLAGE_COLORS.length]}">${assigned ? planThumbHtml(assigned) : `<span class="plan-cell-empty">+</span>`}</span>
+          ${isWornToday ? `<span class="plan-cell-worn">✓</span>` : ""}
+        </button>`;
+    }).join("");
+  } else {
+    strip.className = "plan-days-strip plan-month-grid";
+    const label = $("#plan-month-label");
+    if (label) label.textContent = planMonthCursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
-        <div class="plan-outfit-preview">
-          ${
-            assigned
-              ? `
-            <div class="plan-assigned-box">
-              <div class="plan-assigned-title">${escapeHtml(assigned.name)}</div>
-              <div class="plan-assigned-strip">
-                ${(assigned.items || []).map((it) => `<img class="plan-assigned-img" src="${it.photo}" alt="${describe(it)}" title="${describe(it)}" />`).join("")}
-              </div>
-            </div>`
-              : `
-            <button type="button" class="plan-empty-slot" data-plan-assign-day="${day.key}">
-              <span style="font-size:24px; line-height:1; color:var(--muted);">+</span>
-              <strong style="font-size:13.5px; color:var(--text);">Assign outfit</strong>
-              <small style="font-size:11.5px; color:var(--muted);">Choose from saved</small>
-            </button>`
-          }
-        </div>
+    const year = planMonthCursor.getFullYear();
+    const month = planMonthCursor.getMonth();
+    const leading = (new Date(year, month, 1).getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const todayStr = planLocalDateStr(today);
 
-        ${
-          assigned
-            ? `
-          <div class="plan-day-actions">
-            <button type="button" class="btn-primary" style="padding:9px 14px; font-size:13px;" data-plan-wear="${day.key}">
-              ${isWornToday ? "✓ Worn today" : "Mark as worn"}
-            </button>
-            <div class="plan-day-actions-row">
-              <button type="button" class="btn-link-action" style="flex:1;" data-plan-move="${day.key}">Move</button>
-              <button type="button" class="btn-danger-link" style="flex:1;" data-plan-clear="${day.key}">Clear</button>
-            </div>
-          </div>`
-            : ""
-        }
-      </div>`;
-  }).join("");
+    let html = PLAN_DAYS.map((d) => `<span class="plan-month-head">${d.name[0]}</span>`).join("");
+    for (let i = 0; i < leading; i++) html += `<span class="plan-month-blank"></span>`;
+    for (let n = 1; n <= daysInMonth; n++) {
+      const date = new Date(year, month, n);
+      const key = PLAN_KEY_BY_JS_DAY[date.getDay()];
+      const dateStr = planLocalDateStr(date);
+      const hasPlan = Boolean(plan[key]) && planDateIsPlannable(date);
+      html += `
+        <button type="button" class="plan-month-day ${dateStr === todayStr ? "today" : ""}"
+          data-plan-open-day="${key}" data-plan-open-date="${dateStr}">
+          <span>${n}</span>
+          ${hasPlan ? `<span class="plan-month-dot" aria-label="Outfit planned"></span>` : ""}
+        </button>`;
+    }
+    strip.innerHTML = html;
+  }
+
+  if (openPlanDay) renderPlanDaySheet();
 }
+
+function renderPlanDaySheet() {
+  const body = $("#plan-day-body");
+  if (!body || !openPlanDay) return;
+  const { key, date } = openPlanDay;
+  const [y, m, d] = date.split("-").map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  const day = PLAN_DAYS.find((x) => x.key === key);
+  const plan = getWeeklyPlan();
+  const assigned = plan[key] || null;
+  const plannable = planDateIsPlannable(dateObj);
+  const todayDateStr = new Date().toISOString().slice(0, 10);
+  const isWornToday = assigned && assigned.lastWornDate === todayDateStr;
+
+  const title = $("#plan-day-title");
+  if (title) title.textContent = day ? day.name : "Day";
+  const sub = $("#plan-day-sub");
+  if (sub) sub.textContent = dateObj.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+
+  if (!plannable) {
+    body.innerHTML = `
+      <p class="plan-day-note">Your plan covers this week only. Turn on <strong>Repeat weekly</strong> to plan outfits for this day.</p>`;
+    return;
+  }
+
+  body.innerHTML = assigned
+    ? `
+      <div class="plan-assigned-box">
+        <div class="plan-assigned-title">${escapeHtml(assigned.name)} ${isWornToday ? `<span class="plan-day-worn-tag">✓ Worn</span>` : ""}</div>
+        <div class="plan-assigned-strip">
+          ${(assigned.items || []).map((it) => `<img class="plan-assigned-img" src="${it.photo}" alt="${describe(it)}" title="${describe(it)}" />`).join("")}
+        </div>
+      </div>
+      <div class="plan-day-actions">
+        <button type="button" class="btn-primary" data-plan-wear="${key}">
+          ${isWornToday ? "✓ Worn today" : "Mark as worn"}
+        </button>
+        <div class="plan-day-actions-row">
+          <button type="button" class="btn-link-action" style="flex:1;" data-plan-move="${key}">Move</button>
+          <button type="button" class="btn-danger-link" style="flex:1;" data-plan-clear="${key}">Clear</button>
+        </div>
+      </div>`
+    : `
+      <button type="button" class="plan-empty-slot" data-plan-assign-day="${key}">
+        <span style="font-size:24px; line-height:1; color:var(--muted);">+</span>
+        <strong style="font-size:13.5px; color:var(--text);">Assign outfit</strong>
+        <small style="font-size:11.5px; color:var(--muted);">Choose from saved</small>
+      </button>`;
+}
+
+function openPlanDaySheet(key, date) {
+  openPlanDay = { key, date };
+  renderPlanDaySheet();
+  $("#plan-day-sheet").hidden = false;
+  $("#plan-day-backdrop").hidden = false;
+}
+
+function closePlanDaySheet() {
+  openPlanDay = null;
+  $("#plan-day-sheet").hidden = true;
+  $("#plan-day-backdrop").hidden = true;
+}
+
+$("#plan-day-close")?.addEventListener("click", closePlanDaySheet);
+$("#plan-day-backdrop")?.addEventListener("click", closePlanDaySheet);
+
+$("#plan-view-toggle")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-plan-view]");
+  if (!btn || btn.dataset.planView === planView) return;
+  planView = btn.dataset.planView;
+  if (planView === "month") planMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  renderWeeklyPlan();
+});
+
+$("#plan-month-nav")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-plan-month-step]");
+  if (!btn) return;
+  planMonthCursor = new Date(planMonthCursor.getFullYear(), planMonthCursor.getMonth() + Number(btn.dataset.planMonthStep), 1);
+  renderWeeklyPlan();
+});
 
 // Plan repeat weekly checkbox change listener
 $("#plan-repeat-checkbox")?.addEventListener("change", (e) => {
@@ -4016,15 +5906,23 @@ $("#plan-repeat-checkbox")?.addEventListener("change", (e) => {
     localStorage.setItem(PLAN_REPEAT_KEY, String(e.target.checked));
   } catch {}
   toast(e.target.checked ? "Plan set to repeat weekly 🔁" : "Repeat weekly disabled");
+  renderWeeklyPlan();
 });
 
 // Plan days strip click delegation
 let pendingPlanDayKey = null;
 
-$("#plan-days-strip")?.addEventListener("click", async (e) => {
+async function handlePlanClick(e) {
+  const openBtn = e.target.closest("[data-plan-open-day]");
+  if (openBtn) {
+    openPlanDaySheet(openBtn.dataset.planOpenDay, openBtn.dataset.planOpenDate);
+    return;
+  }
+
   const assignBtn = e.target.closest("[data-plan-assign-day]");
   if (assignBtn) {
     const dayKey = assignBtn.dataset.planAssignDay;
+    closePlanDaySheet();
     openPlanPicker(dayKey);
     return;
   }
@@ -4043,6 +5941,7 @@ $("#plan-days-strip")?.addEventListener("click", async (e) => {
   const moveBtn = e.target.closest("[data-plan-move]");
   if (moveBtn) {
     const dayKey = moveBtn.dataset.planMove;
+    closePlanDaySheet();
     openPlanMoveSheet(dayKey);
     return;
   }
@@ -4078,7 +5977,10 @@ $("#plan-days-strip")?.addEventListener("click", async (e) => {
     renderInsights();
     return;
   }
-});
+}
+
+$("#plan-days-strip")?.addEventListener("click", handlePlanClick);
+$("#plan-day-body")?.addEventListener("click", handlePlanClick);
 
 function openPlanPicker(dayKey) {
   pendingPlanDayKey = dayKey;
@@ -4228,6 +6130,806 @@ $("#plan-move-days-list")?.addEventListener("click", (e) => {
   toast(`Outfit moved to ${targetDayObj ? targetDayObj.name : "day"} ✨`);
 });
 
+// =====================================================
+// Optional Google sign-in (Firebase Auth, loaded as a module in index.html)
+// Guest mode is the default and keeps working without it. Signing in only
+// fills the profile name, email and photo; the wardrobe stays in this browser.
+// =====================================================
+let authUser = null; // { uid, displayName, email, photoURL } while signed in
+let guestChosen = false; // "Continue as guest" tapped during this visit
+const AUTH_GUEST_MSG = "You're still in guest mode.";
+
+function readStoredProfile() {
+  try {
+    const data = JSON.parse(localStorage.getItem(PROFILE_KEY) || "null");
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+// Merge into weari_user_profile without touching its other fields
+function mergeStoredProfile(fields) {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ ...readStoredProfile(), ...fields }));
+  } catch {}
+}
+
+function saveGoogleProfile(user) {
+  const firstName = (user.displayName || "").trim().split(/\s+/)[0];
+  try {
+    if (firstName) localStorage.setItem(PROFILE_FIRST_NAME_KEY, firstName);
+    if (user.email) localStorage.setItem(PROFILE_EMAIL_KEY, user.email);
+  } catch {}
+  mergeStoredProfile({
+    account: {
+      provider: "google",
+      displayName: user.displayName || "",
+      email: user.email || "",
+      photoURL: user.photoURL || "",
+      signedInAt: Date.now(),
+    },
+  });
+}
+
+function renderAuthBlocks() {
+  document.querySelectorAll("[data-auth-block]").forEach((block) => {
+    const signedIn = Boolean(authUser);
+    block.querySelector("[data-auth-guest]").hidden = signedIn;
+    block.querySelector("[data-auth-signed]").hidden = !signedIn;
+    // The Closet prompt steps aside once someone picks guest mode
+    if (block.dataset.authBlock === "prompt") block.hidden = guestChosen && !signedIn;
+    if (signedIn) {
+      block.querySelector("[data-auth-name]").textContent = authUser.displayName || authUser.email || "Google user";
+      const photo = block.querySelector("[data-auth-photo]");
+      photo.hidden = !authUser.photoURL;
+      if (authUser.photoURL) photo.src = authUser.photoURL;
+    }
+  });
+
+  // Profile avatar: Google photo while signed in, otherwise the initial
+  const avatar = $("#profile-avatar");
+  if (avatar) {
+    let img = avatar.querySelector(".profile-avatar-photo");
+    if (authUser && authUser.photoURL) {
+      if (!img) {
+        img = document.createElement("img");
+        img.className = "profile-avatar-photo";
+        img.alt = "";
+        img.referrerPolicy = "no-referrer";
+        avatar.appendChild(img);
+      }
+      img.src = authUser.photoURL;
+      img.hidden = false;
+    } else if (img) {
+      img.hidden = true;
+    }
+  }
+}
+
+function showAuthMessage(button, text) {
+  const msg = button.closest("[data-auth-block]")?.querySelector("[data-auth-msg]");
+  if (!msg) return toast(text);
+  msg.textContent = text;
+  msg.hidden = false;
+}
+
+async function startGoogleSignIn(button) {
+  if (!window.WeariAuth) {
+    showAuthMessage(button, `Google sign-in isn't available right now. ${AUTH_GUEST_MSG}`);
+    return;
+  }
+  const label = button.querySelector("span");
+  const original = label ? label.textContent : "";
+  button.disabled = true;
+  if (label) label.textContent = "Opening Google…";
+  try {
+    const user = await window.WeariAuth.signIn();
+    if (!user) throw new Error("No user returned");
+    authUser = user;
+    guestChosen = false;
+    saveGoogleProfile(user);
+    renderAuthBlocks();
+    if (!$("#screen-profile").hidden) renderProfileScreen();
+    toast(`Signed in as ${user.displayName || user.email} ✨`);
+  } catch (err) {
+    const code = String((err && err.code) || "");
+    const cancelled = code.includes("popup-closed") || code.includes("cancelled-popup");
+    const blocked = code.includes("popup-blocked");
+    showAuthMessage(
+      button,
+      cancelled
+        ? `Sign-in was cancelled. ${AUTH_GUEST_MSG}`
+        : blocked
+        ? `Your browser blocked the Google popup. ${AUTH_GUEST_MSG}`
+        : `Couldn't sign in with Google. ${AUTH_GUEST_MSG}`
+    );
+  } finally {
+    button.disabled = false;
+    if (label) label.textContent = original;
+  }
+}
+
+async function startGoogleSignOut() {
+  try {
+    if (window.WeariAuth) await window.WeariAuth.signOut();
+  } catch (err) {
+    console.warn("Sign-out failed:", err && err.message);
+  }
+  // Back to guest mode: only the account details go; wardrobe, name and email stay
+  authUser = null;
+  const profile = readStoredProfile();
+  if (profile.account) {
+    delete profile.account;
+    try {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    } catch {}
+  }
+  renderAuthBlocks();
+  if (!$("#screen-profile").hidden) renderProfileScreen();
+  toast("Signed out. You're in guest mode.");
+}
+
+document.addEventListener("click", (e) => {
+  const signIn = e.target.closest("[data-google-signin]");
+  if (signIn) return startGoogleSignIn(signIn);
+  if (e.target.closest("[data-google-signout]")) return startGoogleSignOut();
+  const guest = e.target.closest("[data-continue-guest]");
+  if (guest) {
+    guestChosen = true;
+    renderAuthBlocks();
+    showAuthMessage(guest, "You're using Weari as a guest. Your wardrobe stays on this device.");
+  }
+});
+
+// Firebase reports the signed-in user on load and after sign-in or sign-out
+window.addEventListener("weari-auth", (e) => {
+  authUser = e.detail || null;
+  renderAuthBlocks();
+  if (!$("#screen-profile").hidden) renderProfileScreen();
+});
+
+// =====================================================
+// Friends: invite codes, friend feed, borrowing and swap requests (Firestore)
+// Only for signed-in users. Guests never load or call Firestore.
+// Only listings the user switches to "Share with friends" leave this browser.
+//   users/{uid}            displayName, photoURL, inviteCode, createdAt
+//   inviteCodes/{code}     uid, displayName, photoURL (lets a friend find you by code)
+//   friendships/{a_b}      members [a, b] (sorted), status, requestedBy, profiles {uid: {displayName, photoURL}}
+//   listings/{uid_key}     ownerUid, title, description, category, color, thumbnail, type, sharedWithFriends, status, createdAt
+//   requests/{id}          listingId, ownerUid, requesterUid, type, status, messages [{from, text, at}], plus names and title for display
+// =====================================================
+const FRIEND_SHARES_KEY = "weari_friend_shares"; // { shareKey: firestore listing id } for the share switches
+const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I
+const THUMB_MAX_PX = 600;
+const THUMB_MAX_CHARS = 150 * 1024;
+const pendingInviteCode = (new URLSearchParams(location.search).get("invite") || "").toUpperCase().slice(0, 6);
+
+let friendsTab = "feed";
+let myInviteCode = "";
+let friendsCache = []; // [{ id, other, status, requestedBy, profile }]
+let friendFeedCache = [];
+let friendRequestsCache = [];
+let openThreadId = null;
+
+function socialUid() {
+  return authUser ? authUser.uid : null;
+}
+
+async function getFirestore() {
+  if (!socialUid() || !window.WeariAuth || !window.WeariAuth.loadFirestore) throw new Error("signed_out");
+  return window.WeariAuth.loadFirestore();
+}
+
+function friendshipId(a, b) {
+  return a < b ? `${a}_${b}` : `${b}_${a}`;
+}
+
+function myPublicProfile() {
+  return { displayName: (authUser && authUser.displayName) || "Weari friend", photoURL: (authUser && authUser.photoURL) || "" };
+}
+
+function getFriendShares() {
+  try {
+    const data = JSON.parse(localStorage.getItem(FRIEND_SHARES_KEY) || "{}");
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFriendShares(map) {
+  try {
+    localStorage.setItem(FRIEND_SHARES_KEY, JSON.stringify(map));
+  } catch {}
+}
+
+function safeThumb(listing) {
+  const t = String(listing.thumbnail || "");
+  return /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(t) ? t : placeholderImage(listing.category, listing.color, placeholderKind(listing));
+}
+
+function setFriendsStatus(text) {
+  const el = $("#friends-status");
+  if (!el) return;
+  el.textContent = text || "";
+  el.hidden = !text;
+}
+
+// JPEG thumbnail, at most 600px on the long side and under 150KB
+function compressThumbnail(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const nw = img.naturalWidth || THUMB_MAX_PX;
+        const nh = img.naturalHeight || THUMB_MAX_PX;
+        const scale = Math.min(1, THUMB_MAX_PX / Math.max(nw, nh));
+        let w = Math.max(1, Math.round(nw * scale));
+        let h = Math.max(1, Math.round(nh * scale));
+        let quality = 0.82;
+        const canvas = document.createElement("canvas");
+        for (let i = 0; i < 10; i++) {
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff"; // JPEG has no transparency
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          const url = canvas.toDataURL("image/jpeg", quality);
+          if (url.length <= THUMB_MAX_CHARS) return resolve(url);
+          if (quality > 0.5) quality -= 0.12;
+          else {
+            w = Math.round(w * 0.8);
+            h = Math.round(h * 0.8);
+          }
+        }
+        reject(new Error("Photo is too large to share"));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error("Couldn't read the photo"));
+    img.src = src;
+  });
+}
+
+// ---------- My user doc and invite code ----------
+function randomInviteCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(bytes, (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join("");
+}
+
+async function ensureMyUserDoc() {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const me = myPublicProfile();
+  const userRef = fs.doc(db, "users", uid);
+  const snap = await fs.getDoc(userRef);
+  let code = snap.exists() ? snap.data().inviteCode : "";
+
+  if (!code) {
+    for (let attempt = 0; attempt < 5 && !code; attempt++) {
+      const candidate = randomInviteCode();
+      const codeRef = fs.doc(db, "inviteCodes", candidate);
+      if ((await fs.getDoc(codeRef)).exists()) continue;
+      await fs.setDoc(codeRef, { uid, ...me, createdAt: fs.serverTimestamp() });
+      code = candidate;
+    }
+    if (!code) throw new Error("Couldn't make an invite code, please try again");
+    await fs.setDoc(userRef, { ...me, inviteCode: code, createdAt: fs.serverTimestamp() }, { merge: true });
+  } else {
+    await fs.setDoc(userRef, me, { merge: true });
+  }
+  myInviteCode = code;
+  return code;
+}
+
+// ---------- Friendships ----------
+async function loadFriendships() {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const snap = await fs.getDocs(fs.query(fs.collection(db, "friendships"), fs.where("members", "array-contains", uid)));
+  friendsCache = snap.docs.map((d) => {
+    const data = d.data();
+    const other = (data.members || []).find((m) => m !== uid) || "";
+    return {
+      id: d.id,
+      other,
+      status: data.status,
+      requestedBy: data.requestedBy,
+      profile: (data.profiles && data.profiles[other]) || { displayName: "Friend", photoURL: "" },
+    };
+  });
+  return friendsCache;
+}
+
+async function addFriendByCode(rawCode) {
+  const code = String(rawCode || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{6}$/.test(code)) throw new Error("Codes are 6 letters and numbers");
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const codeSnap = await fs.getDoc(fs.doc(db, "inviteCodes", code));
+  if (!codeSnap.exists()) throw new Error("No one has that code yet");
+  const friend = codeSnap.data();
+  if (friend.uid === uid) throw new Error("That's your own code");
+
+  const ref = fs.doc(db, "friendships", friendshipId(uid, friend.uid));
+  const existing = await fs.getDoc(ref);
+  if (existing.exists()) {
+    const data = existing.data();
+    if (data.status === "accepted") return `You're already friends with ${friend.displayName}`;
+    if (data.requestedBy === uid) return `Request already sent to ${friend.displayName}`;
+    await acceptFriendship(existing.id);
+    return `You're now friends with ${friend.displayName} 🎉`;
+  }
+  await fs.setDoc(ref, {
+    members: [uid, friend.uid].sort(),
+    status: "pending",
+    requestedBy: uid,
+    profiles: {
+      [uid]: myPublicProfile(),
+      [friend.uid]: { displayName: friend.displayName || "Friend", photoURL: friend.photoURL || "" },
+    },
+    createdAt: fs.serverTimestamp(),
+  });
+  return `Friend request sent to ${friend.displayName}`;
+}
+
+async function acceptFriendship(id) {
+  const { fs, db } = await getFirestore();
+  await fs.updateDoc(fs.doc(db, "friendships", id), {
+    status: "accepted",
+    [`profiles.${socialUid()}`]: myPublicProfile(),
+    acceptedAt: fs.serverTimestamp(),
+  });
+}
+
+async function declineFriendship(id) {
+  const { fs, db } = await getFirestore();
+  await fs.deleteDoc(fs.doc(db, "friendships", id));
+}
+
+// ---------- Shared listings (my side) ----------
+async function shareListingWithFriends(row) {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const items = await getAllItems();
+  const item = items.find((it) => it.id === row.itemId) || {};
+  const local = row.listingId ? getListings().find((l) => l.id === row.listingId) : null;
+  const thumbnail = await compressThumbnail(itemIllustration(item.category ? item : local || {}, item.photo));
+  const docId = `${uid}_${row.shareKey}`;
+  await fs.setDoc(fs.doc(db, "listings", docId), {
+    ownerUid: uid,
+    title: String((local && local.title) || describe(item) || "Wardrobe piece").slice(0, 60),
+    description: String((local && local.description) || `${item.color || ""} ${item.category || "piece"}, open to swaps and borrowing.`.trim()).slice(0, 400),
+    category: item.category || (local && local.category) || "accessory",
+    color: item.color || (local && local.color) || "multi",
+    thumbnail,
+    type: row.type === "sell" ? "sell" : "swap",
+    sharedWithFriends: true,
+    status: "Listed",
+    createdAt: fs.serverTimestamp(),
+  });
+  const shares = getFriendShares();
+  shares[row.shareKey] = docId;
+  saveFriendShares(shares);
+}
+
+async function unshareListing(shareKey) {
+  const shares = getFriendShares();
+  const docId = shares[shareKey];
+  if (docId) {
+    const { fs, db } = await getFirestore();
+    await fs.deleteDoc(fs.doc(db, "listings", docId));
+  }
+  delete shares[shareKey];
+  saveFriendShares(shares);
+}
+
+// Keep a shared listing's status in step when it's sold locally (best effort)
+async function syncSharedListingStatus(shareKey, status) {
+  const docId = getFriendShares()[shareKey];
+  if (!docId || !socialUid()) return;
+  try {
+    const { fs, db } = await getFirestore();
+    await fs.updateDoc(fs.doc(db, "listings", docId), { status });
+  } catch (err) {
+    console.warn("Couldn't update shared listing:", err.message);
+  }
+}
+
+// ---------- Friends feed ----------
+async function loadFriendFeed() {
+  const { fs, db } = await getFirestore();
+  const friends = (await loadFriendships()).filter((f) => f.status === "accepted");
+  const perFriend = await Promise.all(
+    friends.map(async (f) => {
+      const snap = await fs.getDocs(
+        fs.query(fs.collection(db, "listings"), fs.where("ownerUid", "==", f.other), fs.where("sharedWithFriends", "==", true))
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...d.data(), ownerName: f.profile.displayName }));
+    })
+  );
+  friendFeedCache = perFriend.flat().filter((l) => l.status === "Listed");
+  return friendFeedCache;
+}
+
+// ---------- Requests ----------
+async function loadFriendRequests() {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const col = fs.collection(db, "requests");
+  const [incoming, outgoing] = await Promise.all([
+    fs.getDocs(fs.query(col, fs.where("ownerUid", "==", uid))),
+    fs.getDocs(fs.query(col, fs.where("requesterUid", "==", uid))),
+  ]);
+  const seen = new Map();
+  [...incoming.docs, ...outgoing.docs].forEach((d) => seen.set(d.id, { id: d.id, ...d.data() }));
+  friendRequestsCache = [...seen.values()].sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+  return friendRequestsCache;
+}
+
+async function createFriendRequest(listing, type) {
+  const { fs, db } = await getFirestore();
+  const uid = socialUid();
+  const text =
+    type === "borrow" ? `Hi! Could I borrow your ${listing.title}?` : `Hi! Would you swap your ${listing.title} for something from my wardrobe?`;
+  await fs.addDoc(fs.collection(db, "requests"), {
+    listingId: listing.id,
+    ownerUid: listing.ownerUid,
+    requesterUid: uid,
+    type,
+    status: "pending",
+    messages: [{ from: uid, text, at: Date.now() }],
+    listingTitle: String(listing.title || "").slice(0, 60),
+    ownerName: listing.ownerName || "Friend",
+    requesterName: myPublicProfile().displayName,
+    createdAt: fs.serverTimestamp(),
+    createdAtMs: Date.now(),
+  });
+}
+
+async function setFriendRequestStatus(id, status) {
+  const { fs, db } = await getFirestore();
+  await fs.updateDoc(fs.doc(db, "requests", id), { status });
+}
+
+async function sendFriendMessage(id, text) {
+  const { fs, db } = await getFirestore();
+  await fs.updateDoc(fs.doc(db, "requests", id), {
+    messages: fs.arrayUnion({ from: socialUid(), text: text.slice(0, 500), at: Date.now() }),
+  });
+}
+
+// ---------- Friends screen ----------
+async function renderFriends() {
+  const signedIn = Boolean(socialUid());
+  $("#friends-guest").hidden = signedIn;
+  $("#friends-signed").hidden = !signedIn;
+  if (!signedIn) return; // guest mode: no Firestore at all
+
+  document.querySelectorAll("[data-friends-tab]").forEach((b) => b.classList.toggle("active", b.dataset.friendsTab === friendsTab));
+  $("#friends-feed").hidden = friendsTab !== "feed";
+  $("#friends-people").hidden = friendsTab !== "people";
+  $("#friends-requests").hidden = friendsTab !== "requests";
+  setFriendsStatus("");
+
+  try {
+    if (friendsTab === "feed") await renderFriendFeed();
+    if (friendsTab === "people") await renderFriendPeople();
+    if (friendsTab === "requests") await renderFriendRequests();
+  } catch (err) {
+    console.warn("Friends unavailable:", err.message);
+    setFriendsStatus("Couldn't reach Friends right now. Your wardrobe is safe on this device; try again in a moment.");
+  }
+}
+
+async function renderFriendFeed() {
+  const box = $("#friends-feed");
+  box.innerHTML = `<p class="auth-msg">Loading your friends’ pieces…</p>`;
+  const feed = await loadFriendFeed();
+  if (!feed.length) {
+    const hasFriends = friendsCache.some((f) => f.status === "accepted");
+    box.innerHTML = `
+      <div class="notice">
+        <div class="notice-icon">👯</div>
+        <p>${hasFriends ? "Your friends haven’t shared anything yet." : "Add a friend with their invite code to see what they share."}</p>
+        <button class="btn-secondary" data-friends-goto="people">${hasFriends ? "See friends" : "Add a friend"}</button>
+      </div>`;
+    return;
+  }
+  box.innerHTML = `<div class="grid collage-grid">${feed
+    .map(
+      (l, i) => `
+      <article class="collage-tile-wrap" data-friend-listing="${escapeHtml(l.id)}" tabindex="0" role="button" aria-label="${escapeHtml(l.title)}">
+        ${collageTileHtml([safeThumb(l)], i)}
+        <h3 class="collage-name">${escapeHtml(l.title)}</h3>
+        <span class="collage-count">${escapeHtml(l.ownerName)} · ${l.type === "sell" ? "For sale" : l.type === "lend" ? "To lend" : "Open to swaps"}</span>
+      </article>`
+    )
+    .join("")}</div>`;
+}
+
+async function renderFriendPeople() {
+  if (pendingInviteCode && !$("#invite-input").value) $("#invite-input").value = pendingInviteCode;
+  $("#my-invite-code").textContent = myInviteCode || "······";
+  const [code, friends] = await Promise.all([myInviteCode ? myInviteCode : ensureMyUserDoc(), loadFriendships()]);
+  $("#my-invite-code").textContent = code;
+  const uid = socialUid();
+
+  const person = (f, actions) => `
+    <div class="friend-row">
+      ${f.profile.photoURL ? `<img class="auth-photo" src="${escapeHtml(f.profile.photoURL)}" alt="" referrerpolicy="no-referrer" />` : `<span class="friend-initial">${escapeHtml((f.profile.displayName || "F")[0])}</span>`}
+      <span class="friend-name">${escapeHtml(f.profile.displayName || "Friend")}</span>
+      ${actions}
+    </div>`;
+
+  const incoming = friends.filter((f) => f.status === "pending" && f.requestedBy !== uid);
+  const outgoing = friends.filter((f) => f.status === "pending" && f.requestedBy === uid);
+  const accepted = friends.filter((f) => f.status === "accepted");
+
+  $("#friends-pending").innerHTML =
+    incoming.length || outgoing.length
+      ? `<h3 class="rewear-group-title">Pending</h3>
+         ${incoming
+           .map((f) =>
+             person(
+               f,
+               `<button type="button" class="btn-card-small primary" data-friend-accept="${escapeHtml(f.id)}">Accept</button>
+                <button type="button" class="btn-card-small" data-friend-decline="${escapeHtml(f.id)}">Decline</button>`
+             )
+           )
+           .join("")}
+         ${outgoing.map((f) => person(f, `<small class="friend-meta">Waiting</small>`)).join("")}`
+      : "";
+
+  $("#friends-list").innerHTML = `
+    <h3 class="rewear-group-title">My friends <span class="seg-count">${accepted.length}</span></h3>
+    ${accepted.length ? accepted.map((f) => person(f, "")).join("") : `<p class="label-empty">No friends yet. Share your code or enter theirs.</p>`}`;
+}
+
+async function renderFriendRequests() {
+  const box = $("#friends-requests");
+  box.innerHTML = `<p class="auth-msg">Loading requests…</p>`;
+  const list = await loadFriendRequests();
+  const uid = socialUid();
+  if (!list.length) {
+    box.innerHTML = `
+      <div class="notice">
+        <div class="notice-icon">💌</div>
+        <p>No requests yet. Tap a piece in the Feed to ask to borrow or offer a swap.</p>
+      </div>`;
+    return;
+  }
+  box.innerHTML = list
+    .map((r) => {
+      const mine = r.ownerUid === uid;
+      const who = mine ? `${escapeHtml(r.requesterName || "A friend")} wants to ${r.type === "borrow" ? "borrow" : "swap for"}` : `You asked ${escapeHtml(r.ownerName || "a friend")} to ${r.type === "borrow" ? "borrow" : "swap"}`;
+      const statusLabel = { pending: "Pending", accepted: "Accepted", declined: "Declined" }[r.status] || r.status;
+      return `
+        <article class="rewear-row friend-request">
+          <div class="rewear-row-info">
+            <strong>${escapeHtml(r.listingTitle || "a piece")}</strong>
+            <small>${who} · <span class="rewear-pill rewear-pill-${r.status === "accepted" ? "sold" : "listed"}">${escapeHtml(statusLabel)}</span></small>
+            <div class="friend-request-actions">
+              ${
+                mine && r.status === "pending"
+                  ? `<button type="button" class="btn-card-small primary" data-request-accept="${escapeHtml(r.id)}">Accept</button>
+                     <button type="button" class="btn-card-small" data-request-decline="${escapeHtml(r.id)}">Decline</button>`
+                  : ""
+              }
+              <button type="button" class="btn-card-small" data-request-thread="${escapeHtml(r.id)}">Messages (${(r.messages || []).length})</button>
+            </div>
+          </div>
+        </article>`;
+    })
+    .join("");
+}
+
+function openFriendListingSheet(id) {
+  const l = friendFeedCache.find((x) => x.id === id);
+  if (!l) return;
+  const asked = friendRequestsCache.find((r) => r.listingId === id && r.requesterUid === socialUid());
+  openSheet(`
+    <div class="friend-listing">
+      ${collageTileHtml([safeThumb(l)], 0)}
+      <h3 class="collage-name">${escapeHtml(l.title)}</h3>
+      <p class="friend-meta">Shared by ${escapeHtml(l.ownerName)}</p>
+      <p class="rewear-copy">${escapeHtml(l.description || "")}</p>
+      <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+      ${
+        asked
+          ? `<p class="auth-msg">You already sent a ${asked.type === "borrow" ? "borrow" : "swap"} request (${escapeHtml(asked.status)}).</p>`
+          : `<div class="manual-btn-row">
+               <button type="button" class="btn-primary" style="flex:1;" data-friend-ask="borrow" data-listing="${escapeHtml(l.id)}">Ask to borrow</button>
+               <button type="button" class="btn-secondary" style="flex:1;" data-friend-ask="swap" data-listing="${escapeHtml(l.id)}">Offer a swap</button>
+             </div>`
+      }
+      <button class="link-btn sheet-cancel" data-close-sheet>Close</button>
+    </div>`);
+}
+
+function renderFriendThread(id) {
+  const r = friendRequestsCache.find((x) => x.id === id);
+  if (!r) return;
+  openThreadId = id;
+  const uid = socialUid();
+  const other = r.ownerUid === uid ? r.requesterName : r.ownerName;
+  openSheet(`
+    <div class="sheet-header">
+      <div>
+        <h3>${escapeHtml(other || "Friend")}</h3>
+        <p>About ${escapeHtml(r.listingTitle || "a piece")}</p>
+      </div>
+    </div>
+    <p class="rewear-demo-banner" role="note">Demo only. Payments and local pickup are coming soon.</p>
+    <div class="swap-chat-log" id="friend-chat-log">
+      ${(r.messages || [])
+        .map((m) => {
+          const me = m.from === uid;
+          return `<div class="chat-row ${me ? "user" : "stylist"}"><div class="chat-bubble ${me ? "user" : "stylist"}">${escapeHtml(m.text)}</div></div>`;
+        })
+        .join("")}
+    </div>
+    <form class="swap-chat-form" id="friend-chat-form" autocomplete="off">
+      <input type="text" id="friend-chat-input" class="text-input" placeholder="Write a message" maxlength="500" />
+      <button type="submit" class="chat-send-btn" aria-label="Send">↑</button>
+    </form>
+    <button class="link-btn sheet-cancel" data-close-sheet>Close</button>`);
+  const log = $("#friend-chat-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+// Friends screen clicks
+$("#screen-friends")?.addEventListener("click", async (e) => {
+  const tab = e.target.closest("[data-friends-tab]") || e.target.closest("[data-friends-goto]");
+  if (tab) {
+    friendsTab = tab.dataset.friendsTab || tab.dataset.friendsGoto;
+    return renderFriends();
+  }
+  const tile = e.target.closest("[data-friend-listing]");
+  if (tile) {
+    if (!friendRequestsCache.length) await loadFriendRequests().catch(() => []);
+    return openFriendListingSheet(tile.dataset.friendListing);
+  }
+
+  const run = async (fn, ok) => {
+    try {
+      await fn();
+      if (ok) toast(ok);
+    } catch (err) {
+      setFriendsStatus(err.message && !/permission|network|offline/i.test(err.message) ? err.message : "That didn't work. Please try again.");
+    }
+    renderFriends();
+  };
+  const accept = e.target.closest("[data-friend-accept]");
+  if (accept) return run(() => acceptFriendship(accept.dataset.friendAccept), "Friend added 🎉");
+  const decline = e.target.closest("[data-friend-decline]");
+  if (decline) return run(() => declineFriendship(decline.dataset.friendDecline), "Request declined");
+  const reqAccept = e.target.closest("[data-request-accept]");
+  if (reqAccept) return run(() => setFriendRequestStatus(reqAccept.dataset.requestAccept, "accepted"), "Request accepted");
+  const reqDecline = e.target.closest("[data-request-decline]");
+  if (reqDecline) return run(() => setFriendRequestStatus(reqDecline.dataset.requestDecline, "declined"), "Request declined");
+  const thread = e.target.closest("[data-request-thread]");
+  if (thread) return renderFriendThread(thread.dataset.requestThread);
+
+  if (e.target.closest("#btn-share-invite")) {
+    if (!myInviteCode) return;
+    const url = `${location.origin}${location.pathname}?invite=${myInviteCode}`;
+    const text = `Add me on Weari so we can borrow and swap clothes. My code is ${myInviteCode}.`;
+    try {
+      if (navigator.share) await navigator.share({ title: "Weari", text, url });
+      else {
+        await navigator.clipboard.writeText(`${text} ${url}`);
+        toast("Invite link copied");
+      }
+    } catch (err) {
+      if (err && err.name !== "AbortError") setFriendsStatus(`Share this link: ${url}`);
+    }
+  }
+});
+
+$("#invite-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#invite-input");
+  try {
+    const msg = await addFriendByCode(input.value);
+    input.value = "";
+    toast(msg);
+  } catch (err) {
+    setFriendsStatus(err.message && !/permission|network|offline/i.test(err.message) ? err.message : "Couldn't add that friend. Please try again.");
+    return;
+  }
+  renderFriends();
+});
+
+// Listing sheet and message thread live in the shared bottom sheet
+$("#sheet").addEventListener("click", async (e) => {
+  const ask = e.target.closest("[data-friend-ask]");
+  if (!ask) return;
+  const listing = friendFeedCache.find((l) => l.id === ask.dataset.listing);
+  if (!listing) return;
+  ask.disabled = true;
+  try {
+    await createFriendRequest(listing, ask.dataset.friendAsk);
+    closeSheet();
+    toast(ask.dataset.friendAsk === "borrow" ? "Borrow request sent 💌" : "Swap offer sent 🔁");
+    friendsTab = "requests";
+    renderFriends();
+  } catch (err) {
+    ask.disabled = false;
+    toast("Couldn't send that request. Please try again.");
+  }
+});
+
+$("#sheet").addEventListener("submit", async (e) => {
+  if (e.target.id !== "friend-chat-form") return;
+  e.preventDefault();
+  const input = $("#friend-chat-input");
+  const text = input.value.trim();
+  if (!text || !openThreadId) return;
+  input.disabled = true;
+  try {
+    await sendFriendMessage(openThreadId, text);
+    await loadFriendRequests();
+    renderFriendThread(openThreadId);
+    $("#friend-chat-input")?.focus();
+  } catch {
+    input.disabled = false;
+    toast("Message not sent. Please try again.");
+  }
+});
+
+// "Share with friends" switches in My Rewear
+$("#my-rewear-list")?.addEventListener("change", async (e) => {
+  const sw = e.target.closest("[data-share-key]");
+  if (!sw) return;
+  const on = sw.checked;
+  if (!socialUid()) {
+    sw.checked = !on;
+    toast("Sign in with Google to share with friends");
+    return showScreen("friends");
+  }
+  sw.disabled = true;
+  try {
+    if (on) {
+      await shareListingWithFriends({
+        shareKey: sw.dataset.shareKey,
+        itemId: sw.dataset.shareItem,
+        listingId: sw.dataset.shareListing || "",
+        type: sw.dataset.shareType,
+      });
+      toast("Shared with your friends 👯");
+    } else {
+      await unshareListing(sw.dataset.shareKey);
+      toast("No longer shared");
+    }
+  } catch (err) {
+    console.warn("Share failed:", err.message);
+    sw.checked = !on;
+    toast("Couldn't update sharing. Please try again.");
+  } finally {
+    sw.disabled = false;
+  }
+});
+
+// Signing out clears in-memory friend data so nothing carries into guest mode
+window.addEventListener("weari-auth", () => {
+  if (!socialUid()) {
+    myInviteCode = "";
+    friendsCache = [];
+    friendFeedCache = [];
+    friendRequestsCache = [];
+    openThreadId = null;
+  }
+  if (!$("#screen-friends").hidden) renderFriends();
+});
+
+if (pendingInviteCode) {
+  setTimeout(() => toast("Open Friends to add the person who invited you"), 1200);
+}
+
 // ---------- Start ----------
 (async () => {
   buildAddForm();
@@ -4235,6 +6937,7 @@ $("#plan-move-days-list")?.addEventListener("click", (e) => {
   updateKarmaStreak();
   updateKarmaChip();
   renderKarma();
+  renderAuthBlocks();
   showScreen("wardrobe");
 
   // Show onboarding on first time open
